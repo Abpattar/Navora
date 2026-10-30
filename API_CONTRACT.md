@@ -1,82 +1,273 @@
-# API contract
+# FREIGHTCOMMAND — Complete API Specification & Contracts
 
-All lookup calls happen on the server; the TinyFish key must never be sent to the client.
+All external web scraping and carrier communications are executed securely on the server; the `TINYFISH_API_KEY` is never transmitted to client browsers.
 
-## `GET /api/health`
+---
 
-Example response:
+## 1. System & Health
 
+### `GET /api/health`
+Verifies backend operational status, database connectivity, and `TINYFISH_API_KEY` configuration.
+
+**Response (200 OK):**
 ```json
 {
   "ok": true,
-  "service": "global-freight-command-center",
-  "tinyfishConfigured": false,
-  "checkedAt": "SERVER_GENERATED_ISO_TIMESTAMP",
-  "note": "Key presence is checked only. A real agent run is required to verify upstream access."
+  "service": "freightcommand",
+  "version": "1.0.0",
+  "tinyfishConfigured": true,
+  "databaseStatus": "connected",
+  "checkedAt": "2026-10-30T12:00:00.000Z"
 }
 ```
 
-## `POST /api/shipments/track`
+---
 
-Request:
+## 2. Manifest Operations
 
-```json
-{
-  "carrier": "maersk",
-  "trackingNumber": "REFERENCE_ENTERED_BY_USER"
-}
-```
+### `POST /api/manifest/upload`
+Uploads and parses a multipart `.xlsx`, `.xls`, or `.csv` spreadsheet manifest using SheetJS with automatic column matching.
 
-Response shape:
+**Request:** `multipart/form-data` with form field `file`.
 
+**Response (200 OK):**
 ```json
 {
   "success": true,
-  "result": {
-    "id": "server-generated-uuid",
-    "carrier": "maersk",
-    "carrierName": "Maersk",
-    "trackingNumber": "REFERENCE_ENTERED_BY_USER",
-    "lookupStatus": "success",
-    "status": null,
-    "latestEvent": null,
-    "location": null,
-    "eventDate": null,
-    "estimatedArrival": null,
-    "origin": null,
-    "destination": null,
-    "lastFreeDate": null,
-    "milestones": [],
-    "sourceUrl": "OFFICIAL_CARRIER_TRACKING_URL",
-    "retrievedAt": "SERVER_GENERATED_ISO_TIMESTAMP",
-    "warnings": []
-  }
-}
-```
-
-The nulls above are illustrative of the contract, not shipment data. Fields should be populated only when actually retrieved.
-
-`lookupStatus` is one of:
-- `success`
-- `not_found`
-- `needs_login`
-- `blocked`
-- `unsupported`
-- `error`
-
-A carrier lookup may return HTTP 200 and a `result` with a non-success `lookupStatus` when the agent completed but the shipment wasn't accessible/found. Request validation errors return 400. Missing API key returns 503. Upstream/agent failures return 502 and timeouts return 504.
-
-## `POST /api/shipments/track-batch`
-
-Request:
-
-```json
-{
-  "items": [
-    { "carrier": "maersk", "trackingNumber": "REFERENCE_A" },
-    { "carrier": "msc", "trackingNumber": "REFERENCE_B" }
+  "filename": "sample-manifest.xlsx",
+  "summary": {
+    "totalRows": 5,
+    "validRows": 5,
+    "invalidRows": 0,
+    "duplicateCount": 0
+  },
+  "rows": [
+    {
+      "rowId": "row-1",
+      "shipmentId": "SHP-IN-8921",
+      "trackingNumber": "MSKU9070323",
+      "carrier": "maersk",
+      "carrierRaw": "Maersk Line",
+      "origin": "Shanghai Port, China",
+      "destination": "JNPT Nhava Sheva, India",
+      "promisedEta": "2026-11-02T08:00:00.000Z",
+      "assignedDock": "Dock A",
+      "isValid": true,
+      "errors": []
+    }
   ]
 }
 ```
 
-Maximum five items. Results contain `index`, `success`, and either `result` or `error`. The index corresponds to the input order. At most two TinyFish jobs are executed concurrently.
+### `POST /api/manifest/commit`
+Persists verified manifest rows into the SQLite database and enqueues them for background tracking.
+
+**Request Body (JSON):**
+```json
+{
+  "rows": [
+    {
+      "shipmentId": "SHP-IN-8921",
+      "trackingNumber": "MSKU9070323",
+      "carrier": "maersk",
+      "origin": "Shanghai Port, China",
+      "destination": "JNPT Nhava Sheva, India",
+      "promisedEta": "2026-11-02T08:00:00.000Z",
+      "assignedDock": "Dock A"
+    }
+  ]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "committedCount": 5,
+  "enqueuedCount": 5
+}
+```
+
+### `GET /api/manifest/export`
+Generates and downloads an enriched spreadsheet preserving all original client columns alongside real-time tracking, SLA delay differences, demurrage liability, and dock confirmation keys.
+
+**Query Parameters:**
+- `format`: `xlsx` (default) or `csv`
+
+---
+
+## 3. Shipments & Intelligence
+
+### `GET /api/shipments/enriched`
+Returns all tracked shipments enriched with UN/LOCODE coordinates, SLA risk level, demurrage estimates, and dock booking status.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "count": 5,
+  "shipments": [
+    {
+      "id": "uuid-here",
+      "shipmentId": "SHP-IN-8921",
+      "trackingNumber": "MSKU9070323",
+      "carrier": "maersk",
+      "carrierName": "Maersk Line",
+      "origin": "Shanghai Port, China",
+      "destination": "JNPT Nhava Sheva, India",
+      "promisedEta": "2026-11-02T08:00:00.000Z",
+      "assignedDock": "Dock A",
+      "tracking": {
+        "status": "IN_TRANSIT",
+        "latestEvent": "Vessel departed Shanghai Port",
+        "location": "Shanghai Port",
+        "estimatedArrival": "2026-11-04T12:00:00.000Z",
+        "lookupStatus": "success",
+        "sourceUrl": "https://www.maersk.com/tracking/"
+      },
+      "location": {
+        "latitude": 31.2304,
+        "longitude": 121.4737,
+        "accuracy": "PORT_APPROXIMATE",
+        "source": "UN/LOCODE CNSHA (Shanghai Port)"
+      },
+      "sla": {
+        "isBreached": true,
+        "riskLevel": "HIGH",
+        "reason": "Vessel delayed by 52 hours past promised delivery window"
+      },
+      "demurrage": {
+        "daysOverdue": 2,
+        "dailyRate": 120,
+        "currency": "USD",
+        "estimatedDemurrage": 240
+      },
+      "dockBooking": {
+        "dockId": "Dock A",
+        "slotTime": "2026-11-02T08:00:00.000Z",
+        "status": "CONFIRMED",
+        "confirmationId": "WH-CONF-1793342170339"
+      }
+    }
+  ]
+}
+```
+
+### `POST /api/shipments/track-sse`
+Executes a TinyFish carrier web agent with real-time Server-Sent Events (SSE) streaming for the Live Agent Inspector.
+
+**Request Body (JSON):**
+```json
+{
+  "carrier": "maersk",
+  "trackingNumber": "MSKU9070323",
+  "shipmentId": "uuid-here"
+}
+```
+
+**SSE Stream Events:**
+- `STARTED`: Run initiated with runId.
+- `STREAMING_URL`: Live simulated browser DOM stream URL.
+- `LOG`: Agent action log entries (DOM clicks, navigation, extraction).
+- `PROGRESS`: Current milestone or status updates.
+- `COMPLETE`: Structured JSON result conforming to `TRACKING_OUTPUT_SCHEMA`.
+
+---
+
+## 4. Concurrency Queue
+
+### `GET /api/queue/status`
+Returns real-time queue concurrency metrics across the server instance.
+
+**Response (200 OK):**
+```json
+{
+  "activeCount": 1,
+  "maxConcurrency": 2,
+  "pendingCount": 4,
+  "completedCount": 12,
+  "failedCount": 0
+}
+```
+
+---
+
+## 5. Warehouse Rescheduling & Safety
+
+### `GET /api/warehouse/slots`
+Queries available unloading slots for Docks A–D for a specific calendar date.
+
+**Query Parameters:**
+- `date`: `YYYY-MM-DD` (e.g. `2026-11-04`)
+
+**Response (200 OK):**
+```json
+{
+  "date": "2026-11-04",
+  "docks": [
+    {
+      "dockId": "Dock A",
+      "slots": [
+        { "slotTime": "2026-11-04T08:00:00Z", "isAvailable": true },
+        { "slotTime": "2026-11-04T10:00:00Z", "isAvailable": false, "bookingId": "..." }
+      ]
+    }
+  ]
+}
+```
+
+### `POST /api/warehouse/reschedule-agent`
+Autonomous rescheduling agent endpoint enforcing the **Atomic Booking Failsafe**. It verifies slot availability, creates a replacement reservation with a unique confirmation ID, and only transitions the prior reservation after replacement confirmation is verified.
+
+**Request Body (JSON):**
+```json
+{
+  "shipmentId": "SHP-IN-8921",
+  "originalBookingId": "orig-booking-uuid",
+  "requestedSlotTime": "2026-11-04T14:00:00Z",
+  "preferredDockId": "Dock B",
+  "reason": "Vessel delayed by 52 hours"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "replacementBooking": {
+    "id": "new-booking-uuid",
+    "shipmentId": "SHP-IN-8921",
+    "dockId": "Dock B",
+    "slotTime": "2026-11-04T14:00:00Z",
+    "status": "CONFIRMED",
+    "confirmationId": "WH-CONF-REPL-1793342170339",
+    "originalBookingId": "orig-booking-uuid"
+  },
+  "priorBookingStatus": "RESCHEDULED"
+}
+```
+
+---
+
+## 6. Maritime Disruption Intelligence
+
+### `GET /api/intelligence/disruptions`
+Returns active weather disruptions, port strikes, and maritime congestion mapped to active shipments.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "disruptions": [
+    {
+      "id": "disrupt-1",
+      "port": "JNPT Nhava Sheva",
+      "type": "CONGESTION",
+      "severity": "HIGH",
+      "description": "Berthing delays of 2-3 days due to seasonal monsoon container surges.",
+      "estimatedDelayHours": 48,
+      "affectedShipmentsCount": 2
+    }
+  ]
+}
+```

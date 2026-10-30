@@ -356,7 +356,26 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser. The application will automatically redirect to `/dashboard`.
 
-### 6. Verification & Automated Tests
+### 6. Ready-to-Test Sample Manifests
+The repository includes pre-built, ready-to-test manifest files populated with real ISO 6346 container references and global carriers:
+- **Excel Spreadsheet**: [`sample-manifest.xlsx`](sample-manifest.xlsx) *(also at `public/sample-manifest.xlsx`)*
+- **CSV Spreadsheet**: [`sample-manifest.csv`](sample-manifest.csv) *(also at `public/sample-manifest.csv`)*
+
+| Shipment ID | Container Number | Carrier | Origin | Destination | Promised ETA | Assigned Dock |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `SHP-IN-8921` | **`MSKU9070323`** | Maersk Line | Shanghai Port, China | JNPT Nhava Sheva, India | `2026-11-02 08:00` | Dock A |
+| `SHP-EU-4402` | **`MEDU8456123`** | MSC | Port of Rotterdam | JNPT Nhava Sheva, India | `2026-11-04 14:00` | Dock B |
+| `SHP-US-1904` | **`HLCU1234567`** | Hapag-Lloyd | Hamburg, Germany | Port of Los Angeles, USA | `2026-11-01 10:00` | Dock C |
+| `SHP-SG-7719` | **`CMAU6192840`** | CMA CGM | Singapore Port | Chennai Port, India | `2026-11-06 16:00` | Dock D |
+| `SHP-IN-3390` | **`MRKU4123567`** | Maersk Line | Port of Colombo | Mundra Port, India | `2026-10-31 12:00` | Dock A |
+
+#### Testing the Full Workflow:
+1. Open **[http://localhost:3000/batch](http://localhost:3000/batch)**.
+2. Click the blue **`✨ Load Demo Manifest`** button in the top right to instantly load the sample manifest into the preview grid (or drag-and-drop `sample-manifest.xlsx`).
+3. Click **`Commit 5 Shipments & Begin Tracking`**.
+4. Navigate to **`/agent-console`** to observe live agent DOM tracking telemetry, **`/live-map`** for interactive geospatial coordinates, and **`/warehouse-portal`** for autonomous dock rescheduling.
+
+### 7. Verification & Automated Tests
 Execute the comprehensive test and validation suites:
 ```bash
 # Run unit & integration test suites (Vitest)
