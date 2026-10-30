@@ -1,0 +1,6 @@
+Shipment ID,Container Number,Carrier,Origin,Destination,Promised ETA,Assigned Dock,Cargo Description
+SHP-IN-8921,MSKU9070323,Maersk Line,"Shanghai Port, China","JNPT Nhava Sheva, India",2026-11-02 08:00:00,Dock A,High-priority electronics & server hardware
+SHP-EU-4402,MEDU8456123,MSC,"Port of Rotterdam, Netherlands","JNPT Nhava Sheva, India",2026-11-04 14:00:00,Dock B,Industrial machinery & automation components
+SHP-US-1904,HLCU1234567,Hapag-Lloyd,"Port of Hamburg, Germany","Port of Los Angeles, USA",2026-11-01 10:00:00,Dock C,Precision automotive transmissions
+SHP-SG-7719,CMAU6192840,CMA CGM,Singapore Port,"Chennai Port, India",2026-11-06 16:00:00,Dock D,High-efficiency monocrystalline solar cells
+SHP-IN-3390,MRKU4123567,Maersk Line,"Port of Colombo, Sri Lanka","Mundra Port, India",2026-10-31 12:00:00,Dock A,Temperature-controlled biological pharma

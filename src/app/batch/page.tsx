@@ -18,6 +18,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -102,6 +103,24 @@ export default function ManifestBatchPage() {
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
     if (file) void handleFileUpload(file);
+  };
+
+  const loadSampleManifest = async () => {
+    try {
+      setUploading(true);
+      setError(null);
+      const res = await fetch('/sample-manifest.xlsx');
+      if (!res.ok) throw new Error('Failed to load sample manifest');
+      const blob = await res.blob();
+      const file = new File([blob], 'sample-manifest.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      await handleFileUpload(file);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not load sample manifest');
+    } finally {
+      setUploading(false);
+    }
   };
 
   // Row editing helpers
@@ -198,6 +217,23 @@ export default function ManifestBatchPage() {
           </p>
         </div>
         <div className="heading-actions">
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={loadSampleManifest}
+            disabled={uploading}
+            title="Load ready-to-test sample manifest with real container numbers"
+          >
+            <Sparkles size={16} /> Load Demo Manifest
+          </button>
+          <a
+            href="/sample-manifest.xlsx"
+            download="sample-manifest.xlsx"
+            className="button button-secondary"
+            title="Download sample spreadsheet template"
+          >
+            <FileSpreadsheet size={16} /> Sample Template (.xlsx)
+          </a>
           <a
             href="/api/manifest/export?format=xlsx"
             className="button button-secondary"
