@@ -41,7 +41,8 @@ export function calculateEquipmentDetention(input: DetentionCalculationInput): D
   const expiryDate = new Date(expiryMs);
 
   const returnDate = parseIsoOrDate(input.emptyReturnDate) || new Date();
-  const diffDays = Math.ceil((returnDate.getTime() - expiryMs) / (24 * 60 * 60 * 1000));
+  const daysFraction = (returnDate.getTime() - expiryMs) / (24 * 60 * 60 * 1000);
+  const diffDays = Math.ceil(daysFraction - 0.001);
   const daysExceeded = Math.max(0, diffDays);
   const detentionFee = daysExceeded * dailyRate;
 

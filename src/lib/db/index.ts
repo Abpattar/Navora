@@ -318,8 +318,8 @@ export function getDockBookingByShipment(shipmentId: string): DockBooking | null
   const db = getDb();
   const row = db.prepare(`
     SELECT * FROM dock_bookings
-    WHERE (shipment_id = ? OR tracking_number = ?) AND status != 'CANCELLED'
-    ORDER BY created_at DESC LIMIT 1
+    WHERE (shipment_id = ? OR tracking_number = ?) AND status NOT IN ('CANCELLED', 'RESCHEDULED')
+    ORDER BY created_at DESC, rowid DESC LIMIT 1
   `).get(shipmentId, shipmentId) as Record<string, unknown> | undefined;
 
   if (!row) return null;
