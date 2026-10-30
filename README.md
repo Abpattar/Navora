@@ -1,126 +1,134 @@
-# Navora — Global Freight Command Center
+# FREIGHTCOMMAND — Autonomous Freight Intelligence & Logistics Operations
 
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.1-blue?style=flat&logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4-38bdf8?style=flat&logo=tailwind-css)](https://tailwindcss.com/)
-[![TinyFish SDK](https://img.shields.io/badge/TinyFish%20AI-0.10-orange)](https://tinyfish.ai)
+[![SQLite](https://img.shields.io/badge/SQLite-Node_24_Native-003B57?style=flat&logo=sqlite)](https://nodejs.org/api/sqlite.html)
+[![TinyFish AI](https://img.shields.io/badge/TinyFish%20AI-0.10-orange)](https://tinyfish.ai)
+[![Leaflet](https://img.shields.io/badge/Leaflet-1.9-green?style=flat&logo=leaflet)](https://leafletjs.com/)
 [![Vitest](https://img.shields.io/badge/Vitest-3.2-yellow?style=flat&logo=vitest)](https://vitest.dev/)
 
-**Navora** (Global Freight Command Center) is a shipment intelligence and freight visibility dashboard built for logistics coordinators, supply chain operators, and freight forwarders.
-
-Powered by **Next.js 15 App Router** and **TinyFish Web AI Agents**, Navora queries live, official carrier tracking portals (such as Maersk, MSC, Hapag-Lloyd, CMA CGM, and COSCO) on-demand, extracting structured milestones, events, container coordinates, and estimated arrival times—**without relying on fragile scrapers, fake mock data, or insecure client-side credentials**.
+**FREIGHTCOMMAND** is a full-stack, autonomous freight intelligence command center and logistics execution platform. It transforms static Excel/CSV shipping manifests into real-time operational workflows: live carrier milestone scraping, SLA breach detection, financial demurrage & detention liability calculation, UN/LOCODE geographical coordinate resolution, and autonomous warehouse dock rescheduling with transactional safety failsafes.
 
 ---
 
 ## Table of Contents
 
-- [Key Value Propositions](#key-value-propositions)
+- [Core Value Propositions & Philosophy](#core-value-propositions--philosophy)
+- [Operational Pipeline (Data Flow)](#operational-pipeline-data-flow)
 - [System Architecture](#system-architecture)
-- [How It Works (Data Flow)](#how-it-works-data-flow)
+- [Technology Stack](#technology-stack)
 - [Project Directory Structure](#project-directory-structure)
-- [Detailed File & Component Explanations](#detailed-file--component-explanations)
-- [Core Features](#core-features)
-- [Carrier Registry & Status](#carrier-registry--status)
-- [API Contract & Specifications](#api-contract--specifications)
-- [Quick Start Guide](#quick-start-guide)
+- [Key Features](#key-features)
+- [API Reference](#api-reference)
+- [Quick Start & How to Run](#quick-start--how-to-run)
   - [1. Prerequisites](#1-prerequisites)
-  - [2. Clone or Initialize Repository](#2-clone-or-initialize-repository)
+  - [2. Clone Repository](#2-clone-repository)
   - [3. Install Dependencies](#3-install-dependencies)
-  - [4. Configure Environment Variables](#4-configure-environment-variables)
+  - [4. Environment Configuration](#4-environment-configuration)
   - [5. Run Development Server](#5-run-development-server)
-  - [6. GitHub Setup Instructions](#6-github-setup-instructions)
-- [Available Scripts](#available-scripts)
-- [Design Philosophy & Limitations](#design-philosophy--limitations)
-- [Hackathon Documentation Index](#hackathon-documentation-index)
+  - [6. Verification & Automated Tests](#6-verification--automated-tests)
+- [Testing & Quality Assurance](#testing--quality-assurance)
+- [Autonomous Rescheduling Safety Failsafe](#autonomous-rescheduling-safety-failsafe)
+- [Carrier Registry & Integrations](#carrier-registry--integrations)
 
 ---
 
-## Key Value Propositions
+## Core Value Propositions & Philosophy
 
-1. **Evidence-Based Ground Truth**:
-   The application never fabricates tracking telemetry. If a carrier portal returns `needs_login`, `blocked`, or `not_found`, Navora reports this outcome honestly and preserves the official carrier URL for manual verification.
-2. **Server-Side Security**:
-   The `TINYFISH_API_KEY` never leaks to the client browser. All agent dispatches are routed through authenticated Next.js Node.js server routes.
-3. **Controlled Concurrency**:
-   Batch lookups (up to 5 shipments) run with a strict concurrency ceiling (maximum 2 parallel browser agent sessions) to prevent rate limits and upstream saturation.
-4. **Explainable Anomaly & Delay Warnings**:
-   Conservative heuristics detect explicit carrier exception markers (e.g., `exception`, `rolled`, `disruption`, `held`) and stale past ETAs, alerting operators with clear, actionable context.
-5. **Zero External Database Overhead**:
-   History and audit snapshots persist locally within browser `localStorage`, supporting instant search, filtering, CSV export, and per-shipment re-checks.
+1. **Ground Truth Over Simulation**:
+   FREIGHTCOMMAND adheres strictly to evidence-based logistics. It **never fabricates GPS coordinates**, never generates synthetic carrier tracking events, and never simulates fake warehouse confirmations. If a carrier portal restricts access or requires authentication, the system logs the exact reason and preserves official source URLs for human review.
+2. **Strict Concurrency Protection (Max 2 Agents)**:
+   All browser agent tasks are dispatched through an instance-wide singleton priority queue that enforces a **strict maximum ceiling of 2 concurrent TinyFish agent runs** across the application.
+3. **Failsafe Autonomous Rescheduling**:
+   When delayed vessels cause missed warehouse delivery windows, an autonomous rescheduling agent negotiates a replacement dock reservation. The platform enforces an atomic guardrail: **the existing warehouse booking is NEVER released or marked rescheduled until a valid replacement booking with a unique confirmation ID (`WH-CONF-...`) is successfully booked**.
+4. **Zero-Dependency Native Persistence**:
+   Local persistence is powered by Node.js 24's built-in `node:sqlite` (`DatabaseSync`) configured in WAL mode with connection busy timeouts (`PRAGMA busy_timeout = 5000;`). No external database servers or native C++ compilation modules are required.
+
+---
+
+## Operational Pipeline (Data Flow)
+
+The platform runs the closed-loop **`IMPORT → READ → DETECT → MAP → ANALYZE → ACT → REPORT`** operations lifecycle:
+
+```mermaid
+graph TD
+    A[1. IMPORT: Excel/CSV Manifest] -->|Auto-Column Normalizer| B[(SQLite Persistent Store)]
+    B -->|Priority Queue Max 2 Agents| C[2. READ: TinyFish Carrier Agent]
+    C -->|Real Extracted Milestones| D[4. MAP: UN/LOCODE Geo Resolver]
+    D -->|Real Port & City Coordinates| E[Interactive Global Map]
+    C -->|Live ETA & Timestamp| F[3. DETECT: SLA Delay Engine]
+    F -->|5. ANALYZE: Demurrage Calculator| G[Financial Exposure Table]
+    F -->|Critical Delay Overrun| H[6. ACT: Warehouse Rescheduler]
+    H -->|Atomic Confirmation Swap| I[(Dock Calendar Failsafe)]
+    B -->|7. REPORT: Enriched Exporter| J[Enriched XLSX / CSV Download]
+```
+
+1. **IMPORT**: The operations manager uploads an ocean/land shipping manifest in `.xlsx`, `.xls`, or `.csv` format via drag-and-drop. Column headers (`Container ID`, `Carrier`, `Destination`, `Promised Delivery`, etc.) are auto-detected and normalized.
+2. **READ**: The server enqueues tracking tasks into a concurrency-limited queue (max 2 parallel). TinyFish web agents navigate official carrier tracking pages (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, LDB India, BlueDart, Delhivery, etc.) to extract verifiable status milestones and timestamps.
+3. **DETECT**: The SLA detection engine compares the carrier's live revised ETA against the promised delivery date. Delays >24h are flagged as breaches, delays >72h trigger critical alerts, and customs holds are highlighted.
+4. **MAP**: Extracted origin, transshipment, and destination locations are resolved against a verified UN/LOCODE database covering 100+ global and Indian seaports and ICD hubs. Unmatched names return `UNKNOWN` with null coordinates to avoid hallucinated pins.
+5. **ANALYZE**: Using configurable carrier tariff tables and port overrides, the demurrage and detention engine calculates days overdue past the free-time window and projects financial liability.
+6. **ACT**: For shipments at risk of warehouse dock misses, the autonomous warehouse agent inspects dock slot availability across Docks A–D and reserves an optimal replacement slot before safely releasing the prior slot.
+7. **REPORT**: The manifest exporter merges original manifest columns with enriched logistics intelligence (Live ETA, SLA Status, Days Overdue, Demurrage Exposure, Assigned Dock, Confirmation ID) into downloadable `.xlsx` or `.csv` files.
 
 ---
 
 ## System Architecture
 
-```mermaid
-flowchart TD
-    subgraph Client ["Client Browser (React 19 + Industrial Dark Theme)"]
-        UI[AppShell / UI Pages]
-        TrackPage["/track (Single) & /batch (Batch)"]
-        HistoryStore[("Browser localStorage\ngfc.shipment-history.v1")]
-        CSVExport["CSV Generator"]
-    end
-
-    subgraph Server ["Next.js 15 Backend (Node.js Runtime)"]
-        HealthAPI["GET /api/health"]
-        TrackAPI["POST /api/shipments/track"]
-        BatchAPI["POST /api/shipments/track-batch"]
-        ZodValidator["Zod Schema Validator (trackRequestSchema)"]
-        ConcurrencyGate["Batch Concurrency Controller (max 2 parallel)"]
-        TinyFishClient["TinyFish Client Service (@tiny-fish/sdk)"]
-    end
-
-    subgraph AgentCloud ["TinyFish AI Agent Platform"]
-        WebAgent["TinyFish Autonomous Web Agent"]
-    end
-
-    subgraph CarrierWeb ["Official Ocean Carrier Web Portals"]
-        Maersk["Maersk Tracking Portal"]
-        MSC["MSC Cargo Tracking"]
-        OtherCarriers["CMA CGM, Hapag-Lloyd, COSCO, etc."]
-    end
-
-    UI --> TrackPage
-    TrackPage -->|Validated JSON Request| TrackAPI
-    TrackPage -->|Batch Items Array| BatchAPI
-
-    TrackAPI --> ZodValidator
-    BatchAPI --> ZodValidator
-    BatchAPI --> ConcurrencyGate
-
-    ZodValidator --> TinyFishClient
-    ConcurrencyGate --> TinyFishClient
-
-    TinyFishClient -->|Agent Task with Goal & JSON Schema| WebAgent
-    WebAgent -->|Inspects Live DOM| Maersk
-    WebAgent -->|Inspects Live DOM| MSC
-    WebAgent -->|Inspects Live DOM| OtherCarriers
-
-    WebAgent -->|Structured Observation| TinyFishClient
-    TinyFishClient -->|Normalized ShipmentResult| TrackAPI
-    TinyFishClient -->|Normalized ShipmentResult| BatchAPI
-
-    TrackAPI -->|ShipmentResult JSON| TrackPage
-    BatchAPI -->|BatchResult Array| TrackPage
-
-    TrackPage -->|Record Observation| HistoryStore
-    HistoryStore -->|Filtered Datasets| CSVExport
-    HealthAPI -->|Diagnostics State| UI
+```text
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          FREIGHTCOMMAND CLIENT (React 19)                       │
+│  Industrial Dark Theme • AppShell Navigation • Real-Time Live Status Updates     │
+│                                                                                 │
+│  ┌───────────────┐ ┌────────────────┐ ┌────────────────┐ ┌───────────────────┐  │
+│  │   Dashboard   │ │ Manifest Batch │ │ Shipments Desk │ │ Global Container  │  │
+│  │  KPI Overview │ │  Workstation   │ │ Central Roster │ │    Live Map       │  │
+│  └───────────────┘ └────────────────┘ └────────────────┘ └───────────────────┘  │
+│  ┌───────────────┐ ┌────────────────┐ ┌────────────────┐ ┌───────────────────┐  │
+│  │ Live Agent    │ │   Autonomous   │ │   Maritime     │ │ Carrier Directory │  │
+│  │   Inspector   │ │Warehouse Portal│ │  Intelligence  │ │   & Diagnostics   │  │
+│  └───────────────┘ └────────────────┘ └────────────────┘ └───────────────────┘  │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │ HTTP REST / SSE Stream
+┌────────────────────────────────────────▼────────────────────────────────────────┐
+│                        NEXT.JS 15 BACKEND (Node.js 24)                          │
+│                                                                                 │
+│  ┌───────────────────────┐   ┌────────────────────────┐   ┌──────────────────┐  │
+│  │  Manifest SheetJS     │   │  Logistics Intelligence│   │  UN/LOCODE Geo   │  │
+│  │  Parser & Exporter    │   │  SLA, Demurrage, Risk  │   │ Location Resolver│  │
+│  └───────────────────────┘   └────────────────────────┘   └──────────────────┘  │
+│  ┌───────────────────────┐   ┌────────────────────────┐   ┌──────────────────┐  │
+│  │ Tracking Task Queue   │   │ TinyFish SSE Client    │   │ Warehouse Safety │  │
+│  │ (Max 2 Concurrency)   │   │ Stream & Event Hub     │   │ Rescheduling API │  │
+│  └───────────────────────┘   └────────────────────────┘   └──────────────────┘  │
+└────────────────────┬───────────────────────────────────────────────┬────────────┘
+                     │                                               │
+┌────────────────────▼──────────────┐             ┌──────────────────▼────────────┐
+│      LOCAL PERSISTENT STORE       │             │       TINYFISH CLOUD &        │
+│   Node 24 native node:sqlite      │             │    OFFICIAL CARRIER WEB       │
+│   WAL Mode • Auto Busy Timeout    │             │   Live Browser Navigation     │
+│   freightcommand.db               │             │   Maersk, MSC, LDB India, etc.│
+└───────────────────────────────────┘             └───────────────────────────────┘
 ```
 
 ---
 
-## How It Works (Data Flow)
+## Technology Stack
 
-1. **Operator Input**: The user selects a supported carrier (e.g., Maersk or MSC) and enters an authorized container ID or Bill of Lading reference.
-2. **Server-Side Validation**: The Next.js API route (`/api/shipments/track`) validates the request structure and character bounds using Zod (`src/lib/validation.ts`).
-3. **Agent Task Dispatch**: `lookupShipmentWithTinyFish` constructs an explicit, boundary-constrained prompt instructed to:
-   - Navigate to the verified carrier URL (`input.carrier.trackingUrl`).
-   - Query the specific reference without attempting CAPTCHA bypass or unauthorized logins.
-   - Return structured JSON matching the defined `outputSchema`.
-4. **Normalization & Warning Calculation**: The server processes the raw agent response, cleans empty/filler strings (`N/A`, `Unknown`, `Unavailable`), extracts milestones, verifies source domain integrity, and generates rule-based alerts (`buildWarnings`).
-5. **Client Presentation & Storage**: The frontend updates the UI status badge, milestone timeline, and warnings, while updating local `localStorage` history for dashboard statistics and CSV export.
+| Layer | Technologies |
+| :--- | :--- |
+| **Framework & Runtime** | [Next.js 15.5](https://nextjs.org/) (App Router), [React 19.1](https://react.dev/), [Node.js 24](https://nodejs.org/) |
+| **Language** | [TypeScript 5.9](https://www.typescriptlang.org/) (Strict typing throughout) |
+| **Styling & Design** | [Tailwind CSS 3.4](https://tailwindcss.com/) with custom Industrial Dark Theme (`#0b0f17`, `#111827`, `#059669`) |
+| **Icons & Visuals** | [Lucide React](https://lucide.dev/) (clean technical glyphs) |
+| **Mapping Engine** | [Leaflet 1.9](https://leafletjs.com/) & [React-Leaflet](https://react-leaflet.js.org/) with OpenStreetMap tiles (No paid API keys required) |
+| **Spreadsheet Processing** | [SheetJS (xlsx)](https://docs.sheetjs.com/) for XLSX, XLS, and CSV parsing & generation |
+| **Database & Cache** | Native Node.js 24 `node:sqlite` (`DatabaseSync` with WAL journaling and busy timeout) |
+| **Autonomous AI Agents** | [TinyFish SDK](https://tinyfish.ai) (`@tiny-fish/sdk` streaming over Server-Sent Events) |
+| **Schema Validation** | [Zod 3.24](https://zod.dev/) for request payloads, manifests, and booking contracts |
+| **Testing & Quality** | [Vitest 3.2](https://vitest.dev/) (34 unit & integration tests), ESLint 9 (FlatCompat) |
 
 ---
 
@@ -128,341 +136,298 @@ flowchart TD
 
 ```text
 global-freight-command-center/
-├── .env.example                # Sample environment configuration template
-├── .gitignore                  # Git ignore rules (protects credentials and builds)
-├── next.config.ts              # Next.js 15 application configuration
-├── package.json                # Project dependencies, scripts, and package metadata
-├── postcss.config.mjs          # PostCSS configuration for Tailwind CSS
-├── tailwind.config.ts          # Tailwind CSS design system tokens and styling
-├── tsconfig.json               # TypeScript strict compiler configuration
-├── vitest.config.ts            # Vitest unit test runner configuration
-├── eslint.config.mjs           # ESLint flat config with Next.js presets
+├── .env.example                          # Environment variable configuration template
+├── .gitignore                            # Excludes node_modules, .next, .data, local logs
+├── eslint.config.mjs                     # ESLint 9 configuration with Next.js FlatCompat
+├── next.config.ts                        # Next.js 15 configuration
+├── package.json                          # Dependencies, scripts, and project metadata
+├── tsconfig.json                         # Strict TypeScript configuration
+├── vitest.config.ts                      # Vitest test runner configuration
 │
-├── src/                        # Application source code
-│   ├── app/                    # Next.js App Router (pages & server API endpoints)
-│   │   ├── layout.tsx          # Root HTML layout with font configuration & AppShell
-│   │   ├── page.tsx            # Root redirector (redirects '/' to '/dashboard')
-│   │   ├── globals.css         # Custom Industrial-Dark design system & animations
-│   │   ├── dashboard/          # Operations overview desk with real-time KPI metrics
-│   │   │   └── page.tsx        # Dashboard page component
-│   │   ├── track/              # Single shipment live lookup interface
-│   │   │   └── page.tsx        # Track page component
-│   │   ├── batch/              # Multi-shipment batch queue lookup interface
-│   │   │   └── page.tsx        # Batch tracking page component
-│   │   ├── history/            # Per-browser tracking observation audit history
-│   │   │   └── page.tsx        # History page component (with search & filter)
-│   │   ├── carriers/           # Verified ocean carrier directory & direct portals
-│   │   │   └── page.tsx        # Carrier directory page component
-│   │   ├── settings/           # System diagnostics, key health, and storage controls
-│   │   │   └── page.tsx        # Settings page component
-│   │   └── api/                # Node.js backend routes (protected from browser)
-│   │       ├── health/         # System and API key health verification
-│   │       │   └── route.ts    # GET /api/health
-│   │       └── shipments/
-│   │           ├── track/      # Single live carrier lookup endpoint
-│   │           │   └── route.ts# POST /api/shipments/track
-│   │           └── track-batch/# Concurrent-limited batch lookup endpoint
-│   │               └── route.ts# POST /api/shipments/track-batch
+├── src/
+│   ├── app/                              # Next.js App Router (23 pages & API routes)
+│   │   ├── layout.tsx                    # Root layout with font injection and AppShell
+│   │   ├── page.tsx                      # Root route redirecting to /dashboard
+│   │   ├── globals.css                   # Custom CSS variables, dark themes, and animations
+│   │   ├── dashboard/page.tsx            # Operations Command Desk with 5 live KPI cards
+│   │   ├── batch/page.tsx                # Manifest Management Workspace & SheetJS ingestion
+│   │   ├── shipments/page.tsx            # Central Shipments Roster with live filters
+│   │   ├── live-map/page.tsx             # Interactive Global Container Map
+│   │   ├── agent-console/page.tsx        # Live TinyFish Agent Telemetry & Browser Inspector
+│   │   ├── warehouse-portal/             # Autonomous Warehouse Portal
+│   │   │   ├── page.tsx                  # Dock calendar, capacity matrix, and booking form
+│   │   │   ├── bookings/page.tsx         # Warehouse reservations audit log
+│   │   │   └── components/               # DockCalendar, AvailableSlots, BookingForm
+│   │   ├── intelligence/page.tsx         # Maritime Disruption & Port Congestion Monitor
+│   │   ├── carriers/page.tsx             # Verified Carrier Directory & Source Health
+│   │   ├── settings/page.tsx             # System diagnostics & database health
+│   │   ├── track/page.tsx                # Single shipment live tracking lookup
+│   │   ├── history/page.tsx              # Browser local history audit log
+│   │   │
+│   │   └── api/                          # Server-side API endpoints
+│   │       ├── health/route.ts           # GET /api/health
+│   │       ├── manifest/
+│   │       │   ├── upload/route.ts       # POST /api/manifest/upload (SheetJS parser)
+│   │       │   ├── commit/route.ts       # POST /api/manifest/commit (Commit to SQLite)
+│   │       │   └── export/route.ts       # GET /api/manifest/export (Generate XLSX/CSV)
+│   │       ├── shipments/
+│   │       │   ├── enriched/route.ts     # GET /api/shipments/enriched
+│   │       │   ├── track/route.ts        # POST /api/shipments/track
+│   │       │   ├── track-batch/route.ts  # POST /api/shipments/track-batch
+│   │       │   └── track-sse/route.ts    # POST /api/shipments/track-sse (Streaming)
+│   │       ├── queue/
+│   │       │   └── status/route.ts       # GET /api/queue/status
+│   │       ├── warehouse/
+│   │       │   ├── bookings/route.ts     # GET, POST /api/warehouse/bookings
+│   │       │   ├── slots/route.ts        # GET /api/warehouse/slots
+│   │       │   ├── reschedule/route.ts   # POST /api/warehouse/reschedule (Manual)
+│   │       │   └── reschedule-agent/route.ts # POST /api/warehouse/reschedule-agent (Failsafe)
+│   │       ├── agent/
+│   │       │   └── runs/route.ts         # GET /api/agent/runs
+│   │       └── intelligence/
+│   │           └── disruptions/route.ts  # GET /api/intelligence/disruptions
 │   │
-│   ├── components/             # Reusable UI component library
-│   │   ├── AppShell.tsx        # Navigation sidebar, breadcrumb topbar, and frame
-│   │   ├── TrackForm.tsx       # Live tracking lookup form with loading states
-│   │   ├── ShipmentTable.tsx   # Detailed results table with expandable milestones
-│   │   ├── StatCard.tsx        # Industrial KPI metric card with color tones
-│   │   └── StatusBadge.tsx     # Visual indicator for carrier & lookup statuses
+│   ├── components/                       # Shared UI components
+│   │   ├── AppShell.tsx                  # Global sidebar navigation & top status bar
+│   │   ├── StatusBadge.tsx               # Industrial status pills & risk badges
+│   │   ├── StatCard.tsx                  # Operations KPI metric cards
+│   │   ├── TrackForm.tsx                 # Manual reference lookup form
+│   │   ├── ShipmentTable.tsx             # Expandable shipment roster table
+│   │   ├── agent-inspector/              # Agent Inspector widgets
+│   │   │   ├── AgentInspector.tsx        # Terminal + Browser + Timeline coordinator
+│   │   │   ├── AgentTerminal.tsx         # Live streaming console log
+│   │   │   ├── BrowserWindow.tsx         # Live simulated carrier DOM inspector
+│   │   │   ├── AgentTimeline.tsx         # Step-by-step milestone execution timeline
+│   │   │   └── AgentStatus.tsx           # Run state, elapsed time, and token counts
+│   │   └── map/                          # Geospatial map components
+│   │       ├── ShipmentMap.tsx           # Dynamic client-only Leaflet wrapper
+│   │       ├── MapClient.tsx             # React-Leaflet canvas, vessel markers, polylines
+│   │       ├── ShipmentPopup.tsx         # Container inspection popup card
+│   │       ├── MapControls.tsx           # Filter by SLA risk, carrier, and zoom controls
+│   │       └── MapLegend.tsx             # Color-coded accuracy and risk legend
 │   │
-│   └── lib/                    # Core business logic, utilities, and integrations
-│       ├── types.ts            # Shared TypeScript data models, contracts, and enums
-│       ├── carriers.ts         # Carrier registry, URLs, and priority classifications
-│       ├── validation.ts       # Zod schemas for tracking and batch validation
-│       ├── storage.ts          # Browser localStorage persistence & CSV export
-│       ├── format.ts           # Date/time formatting and string presentation helpers
-│       ├── useShipmentHistory.ts# Custom React hook for synchronized history state
+│   └── lib/                              # Core domain logic & services
+│       ├── types.ts                      # Universal domain interfaces and types
+│       ├── carriers.ts                   # 16 ocean & road carriers with SSRF domain allowlists
+│       ├── validation.ts                 # Zod validation schemas
+│       ├── db/
+│       │   ├── schema.ts                 # SQLite schema definitions
+│       │   └── index.ts                  # node:sqlite transactional data access layer
+│       ├── excel/
+│       │   ├── parser.ts                 # SheetJS reader with auto column normalizer
+│       │   └── exporter.ts               # XLSX/CSV enriched report generator
+│       ├── geo/
+│       │   ├── types.ts                  # Port and city coordinate interfaces
+│       │   ├── port-database.ts          # 100+ verified UN/LOCODE port & city coordinates
+│       │   ├── location-resolver.ts      # 4-tier location resolution algorithm
+│       │   └── coordinate-utils.ts       # Haversine distance & geodesic route calculations
+│       ├── logistics/
+│       │   ├── eta-calculator.ts         # Timezone comparison and status classification
+│       │   ├── sla-detector.ts           # SLA breach and threshold detection
+│       │   ├── demurrage-calculator.ts   # Carrier tariff & port override financial engine
+│       │   ├── detention-calculator.ts   # Equipment return detention engine
+│       │   ├── risk-engine.ts            # Composite 0-100 risk score calculator
+│       │   └── action-recommender.ts     # Action recommendation engine
+│       ├── queue/
+│       │   └── tracking-queue.ts         # Singleton queue with strict max 2 concurrency
 │       └── tinyfish/
-│           └── client.ts       # TinyFish agent runner, JSON extraction & heuristics
+│           ├── client.ts                 # TinyFish SSE streaming client
+│           └── search.ts                 # Maritime disruption scraper
 │
-├── tests/                      # Automated test suites
-│   └── validation.test.ts      # Unit tests for carrier registry and Zod schemas
-│
-└── docs/                       # Hackathon guides & specifications
-    ├── API_CONTRACT.md         # Detailed API input/output specification
-    ├── CARRIER_TEST_CHECKLIST.md # Live verification checklist for shipping carriers
-    ├── CONTRIBUTING.md         # Team branching, review, and merging workflow
-    ├── DEMO_SCRIPT.md          # 90-second hackathon presentation walkthrough
-    ├── HACKATHON_QUICKSTART.md # Rapid onboarding guide for teammates
-    └── TEAM_SPLIT.md           # Role division across frontend, backend, and QA
+└── tests/                                # Vitest test suites (34 tests)
+    ├── validation.test.ts                # Zod schemas, carrier allowlists, SSRF protection
+    ├── excel.test.ts                     # SheetJS manifest upload, column matching & export
+    ├── logistics.test.ts                 # SLA breaches, timezone ETAs, demurrage calculations
+    ├── map.test.ts                       # UN/LOCODE geo matching, distances, zero-fake coords
+    ├── tinyfish.test.ts                  # Concurrency limits, prompt security, event formats
+    └── warehouse.test.ts                 # Dock reservations, capacity, atomic swap failsafe
 ```
 
 ---
 
-## Detailed File & Component Explanations
+## Key Features
 
-### Application Pages (`src/app/`)
+### 1. Operations Command Desk (`/dashboard`)
+- 5 live operational KPI cards: Active Containers, SLA Breaches, Accrued Demurrage ($), Warehouse Utilization (%), and Live Agent Workers.
+- High-priority action recommendations prompting coordinators to reschedule docks or file customs documentation.
+- Live recent agent telemetry feed showing real-time browser actions.
 
-- [`layout.tsx`](./src/app/layout.tsx): Defines the root layout structure, imports Inter fonts, establishes dark metadata, and wraps all views inside the responsive `AppShell`.
-- [`page.tsx`](./src/app/page.tsx): Direct route redirector from root `/` to `/dashboard`.
-- [`dashboard/page.tsx`](./src/app/dashboard/page.tsx): Main operations control deck. Computes total lookups, success rates, active alerts, and unique carriers directly from real local history. Features a quick-lookup card and recent activities table.
-- [`track/page.tsx`](./src/app/track/page.tsx): Dedicated single-shipment tracking studio with step-by-step guidance, source verification notices, and deep investigation results.
-- [`batch/page.tsx`](./src/app/batch/page.tsx): Batch processing suite allowing up to 5 concurrent references across multiple carriers, featuring status progress bars and batch CSV export.
-- [`history/page.tsx`](./src/app/history/page.tsx): Comprehensive audit log with full-text search, carrier dropdown filtering, status filtering, per-item refresh, deletion, and RFC-compliant CSV download.
-- [`carriers/page.tsx`](./src/app/carriers/page.tsx): Directory of 10 global carriers with priority badges, testing status notes, reference hints, and direct outbound links to official tracking portals.
-- [`settings/page.tsx`](./src/app/settings/page.tsx): Diagnostic control center displaying runtime environment status, TinyFish API key availability, local storage record counts, and storage purge utilities.
+### 2. Manifest Management Workstation (`/batch`)
+- Drag-and-drop ingestion of standard freight spreadsheets (`.xlsx`, `.xls`, `.csv`).
+- Intelligent column detection automatically maps variants (e.g. `Container No.`, `Equipment ID`, `B/L Number`, `Shipping Line`).
+- Interactive validation table with instant commit to SQLite database.
+- Batch dispatch through the concurrency-controlled agent queue.
 
-### Backend API Routes (`src/app/api/`)
+### 3. Central Shipments Roster (`/shipments`)
+- Search by container ID, bill of lading, carrier, or destination port.
+- Filter by SLA risk status (`ON_TIME`, `AT_RISK`, `BREACHED`, `CRITICAL`), carrier, and dock assignment.
+- One-click trigger for autonomous carrier re-tracking or dock rescheduling.
 
-- [`health/route.ts`](./src/app/api/health/route.ts): Exposes `GET /api/health`. Checks server uptime and confirms whether `TINYFISH_API_KEY` is loaded into environment variables.
-- [`shipments/track/route.ts`](./src/app/api/shipments/track/route.ts): Exposes `POST /api/shipments/track`. Validates inputs via Zod, looks up carrier configs, executes the TinyFish agent, and returns a standardized `ShipmentResult`.
-- [`shipments/track-batch/route.ts`](./src/app/api/shipments/track-batch/route.ts): Exposes `POST /api/shipments/track-batch`. Validates up to 5 items and runs a worker pool limited to maximum 2 concurrent agent tasks to avoid rate limits and timeouts.
+### 4. Global Container Live Map (`/live-map`)
+- Interactive Leaflet-powered global maritime visualization.
+- Vessel and container pins positioned using **verified UN/LOCODE coordinates** or carrier GPS.
+- Curved geodesic voyage polylines connecting origin, current position, and destination.
+- Filter by carrier, SLA risk level, or port cluster.
 
-### Core Libraries (`src/lib/`)
+### 5. Live Agent Inspector (`/agent-console`)
+- Direct window into autonomous agent operations.
+- Real-time streaming terminal displaying browser navigation events, DOM lookups, and JSON extractions.
+- Simulated live browser viewport reflecting the carrier portal visited.
+- Concurrency monitoring badge displaying live worker count (strictly $\le 2$).
 
-- [`types.ts`](./src/lib/types.ts): Canonical definitions for `CarrierId`, `CarrierConfig`, `LookupStatus`, `ShipmentMilestone`, `ShipmentResult`, and API interfaces.
-- [`carriers.ts`](./src/lib/carriers.ts): Registry of global container shipping lines (Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO, Evergreen, ONE, OOCL, ZIM, Yang Ming).
-- [`validation.ts`](./src/lib/validation.ts): Zod schemas (`trackRequestSchema`, `batchRequestSchema`) enforcing tracking number regex (`^[A-Za-z0-9][A-Za-z0-9 .\/_-]*$`) and length boundaries (3–80 characters).
-- [`tinyfish/client.ts`](./src/lib/tinyfish/client.ts): Orchestrates `@tiny-fish/sdk`. Defines the output schema, constructs prompts, handles upstream errors, parses JSON payload variations, verifies official domain URLs, and runs the conservative warning engine.
-- [`storage.ts`](./src/lib/storage.ts): Browser `localStorage` adapter (`gfc.shipment-history.v1`) with error handling and client-side CSV generator.
-- [`useShipmentHistory.ts`](./src/lib/useShipmentHistory.ts): React state hook providing persistent history, real-time addition, selective deletion, and storage synchronization across views.
+### 6. Autonomous Warehouse Portal (`/warehouse-portal` & `/warehouse-portal/bookings`)
+- Live dock capacity matrix across 4 docks (Docks A–D) for 08:00–18:00 operational slots.
+- Autonomous rescheduling engine that calculates delayed vessel arrival and suggests optimal replacement slots.
+- **Atomic Failsafe**: Guarantees that prior bookings are only marked `RESCHEDULED` after the replacement booking is successfully confirmed with an authoritative confirmation key (`WH-CONF-...`).
+- Full audit log of all bookings with original reference lineage.
 
-### UI Components (`src/components/`)
+### 7. Maritime Disruption Intelligence (`/intelligence`)
+- Real-time weather, port strike, and congestion warnings mapped to affected shipments in transit.
+- Severity levels (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) with estimated delay impacts.
 
-- [`AppShell.tsx`](./src/components/AppShell.tsx): Industrial layout shell with sidebar navigation, active page indicator, workspace pill, breadcrumbs, live lookup indicator, and mobile menu scrim.
-- [`TrackForm.tsx`](./src/components/TrackForm.tsx): Intuitive tracking submission form with carrier selector, sample placeholder updates, input validation messages, and live loading spinners.
-- [`ShipmentTable.tsx`](./src/components/ShipmentTable.tsx): Rich data grid displaying carrier, tracking reference, status, latest event, location, ETA, retrieval timestamp, warnings, and expandable milestone timelines.
-- [`StatCard.tsx`](./src/components/StatCard.tsx): Metric summary card with icons and customizable tones (`green`, `amber`, `red`, `neutral`).
-- [`StatusBadge.tsx`](./src/components/StatusBadge.tsx): Standardized pill badges for tracking outcomes (`success`, `needs_login`, `blocked`, `not_found`, `error`).
-
----
-
-## Core Features
-
-| Feature | Description |
-| :--- | :--- |
-| **Real-Time Web Intelligence** | Employs TinyFish AI browser agents to inspect real carrier websites on-demand. |
-| **Single & Batch Tracking** | Lookup individual containers or process batches of up to 5 shipments with throttled concurrency. |
-| **Audit-Ready Snapshots** | Saves each observation with exact ISO retrieval timestamps and direct official carrier links. |
-| **Conservative Warning Engine** | Flags carrier exceptions (held, rolled, delayed) and expired ETAs without false alarms. |
-| **Zero-Database Persistence** | Stores up to 200 recent lookups inside browser `localStorage` with full offline availability. |
-| **RFC-Compliant CSV Export** | Export filtered or complete tracking history snapshots with a single click. |
-| **Carrier Directory** | Instant reference guide for tracking URL patterns and reference formats for top carriers. |
-| **Industrial Dark UI** | Precision high-contrast UI styled with Tailwind CSS, custom gradients, and Lucide icons. |
+### 8. Enriched Spreadsheet Export
+- Download comprehensive logistics reports preserving all original manifest fields plus:
+  - `Live Status`, `Normalized Carrier`, `Resolved Location`, `Location Accuracy`, `Live ETA`, `ETA Difference (Hours)`, `SLA Status`, `Demurrage Days Overdue`, `Demurrage Liability ($/₹)`, `Assigned Dock`, `Booking Confirmation Key`.
 
 ---
 
-## Carrier Registry & Status
+## API Reference
 
-| Carrier | Code | Integration Status | Tracking URL | Reference Format |
-| :--- | :--- | :--- | :--- | :--- |
-| **Maersk** | `maersk` | **Priority** | [maersk.com/tracking](https://www.maersk.com/tracking/) | Container / B/L number |
-| **MSC** | `msc` | **Priority** | [msc.com/track-a-shipment](https://www.msc.com/en/track-a-shipment) | Container / Booking / B/L |
-| **CMA CGM** | `cma-cgm` | Candidate | [cma-cgm.com/ebusiness/tracking](https://www.cma-cgm.com/ebusiness/tracking) | Container / Reference |
-| **Hapag-Lloyd** | `hapag-lloyd` | Candidate | [hapag-lloyd.com/solutions/tracking](https://www.hapag-lloyd.com/solutions/tracking/) | Container / B/L number |
-| **COSCO** | `cosco` | Candidate | [elines.coscoshipping.com](https://elines.coscoshipping.com/ebusiness/cargoTracking) | Container / Booking / B/L |
-| **Evergreen** | `evergreen` | Candidate | [shipmentlink.com](https://www.shipmentlink.com/servlet/TDB1_CargoTracking.do) | Container / Shipment Ref |
-| **ONE** | `one` | Candidate | [ecomm.one-line.com](https://ecomm.one-line.com/ecom/CUP_HOM_3301.do) | Container / B/L Ref |
-| **OOCL** | `oocl` | Candidate | [oocl.com/ourservices](https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/default.aspx) | Container / B/L Ref |
-| **ZIM** | `zim` | Candidate | [zim.com/tools/track-a-shipment](https://www.zim.com/tools/track-a-shipment) | Container / Shipment Ref |
-| **Yang Ming** | `yang-ming` | Candidate | [yangming.com/e-service](https://www.yangming.com/e-service/track_trace/track_trace_cargo_tracking.aspx) | Container / B/L Ref |
-
-> **Lookup Outcome Classifications:**
-> - `success`: Carrier page loaded and active shipment details were successfully extracted.
-> - `not_found`: Carrier verified that no matching shipment exists for the provided reference.
-> - `needs_login`: Carrier page requires customer authentication or an active portal account.
-> - `blocked`: Carrier portal served an anti-bot restriction or CAPTCHA (reported transparently).
-> - `unsupported`: Carrier portal layout is incompatible with automated public extraction.
-> - `error`: Network, timeout, or upstream agent execution failure.
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/health` | `GET` | System health, database connection, and `TINYFISH_API_KEY` configuration status |
+| `/api/manifest/upload` | `POST` | Parses multipart `.xlsx`, `.xls`, or `.csv` files and returns normalized shipment rows |
+| `/api/manifest/commit` | `POST` | Persists parsed manifest rows into the SQLite database |
+| `/api/manifest/export` | `GET` | Generates and downloads enriched XLSX or CSV spreadsheets (`?format=xlsx` or `?format=csv`) |
+| `/api/shipments/enriched`| `GET` | Returns all tracked shipments with logistics risk, demurrage, and dock allocations |
+| `/api/shipments/track` | `POST` | Dispatches single carrier lookup via TinyFish agent |
+| `/api/shipments/track-batch` | `POST` | Enqueues up to 25 shipments into the concurrency-limited tracking queue |
+| `/api/shipments/track-sse` | `POST` | Streams live Server-Sent Events during agent execution for the Inspector console |
+| `/api/queue/status` | `GET` | Real-time queue metrics: active agents (max 2), queued count, completed count |
+| `/api/warehouse/slots` | `GET` | Returns available dock slots for a specified date (`?date=YYYY-MM-DD`) |
+| `/api/warehouse/bookings`| `GET`, `POST` | Lists all dock reservations or creates a new confirmed booking |
+| `/api/warehouse/reschedule-agent` | `POST` | Autonomous agent endpoint: safely reserves a replacement dock slot before retiring previous slot |
+| `/api/intelligence/disruptions` | `GET` | Lists active maritime disruptions, port congestion, and weather alerts |
+| `/api/agent/runs` | `GET` | Returns recent agent execution runs, duration, and terminal event logs |
 
 ---
 
-## API Contract & Specifications
-
-### 1. Health Diagnostic
-
-```http
-GET /api/health
-```
-
-**Response (200 OK):**
-```json
-{
-  "ok": true,
-  "service": "global-freight-command-center",
-  "tinyfishConfigured": true,
-  "checkedAt": "2026-10-29T17:15:00.000Z",
-  "note": "Key presence is checked only. A real agent run is required to verify upstream access."
-}
-```
-
-### 2. Single Shipment Tracking
-
-```http
-POST /api/shipments/track
-Content-Type: application/json
-
-{
-  "carrier": "maersk",
-  "trackingNumber": "MSKU1234567"
-}
-```
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "result": {
-    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "carrier": "maersk",
-    "carrierName": "Maersk",
-    "trackingNumber": "MSKU1234567",
-    "lookupStatus": "success",
-    "status": "In Transit",
-    "latestEvent": "Vessel departure",
-    "location": "Rotterdam, Netherlands",
-    "eventDate": "2026-10-28 14:30 UTC",
-    "estimatedArrival": "2026-11-04",
-    "origin": "Rotterdam",
-    "destination": "New York",
-    "lastFreeDate": null,
-    "milestones": [
-      {
-        "description": "Gate in cy",
-        "location": "Rotterdam",
-        "eventDate": "2026-10-26 09:12 UTC"
-      },
-      {
-        "description": "Loaded on vessel",
-        "location": "Rotterdam",
-        "eventDate": "2026-10-27 18:40 UTC"
-      }
-    ],
-    "sourceUrl": "https://www.maersk.com/tracking/MSKU1234567",
-    "retrievedAt": "2026-10-29T17:15:30.120Z",
-    "warnings": []
-  }
-}
-```
-
-### 3. Batch Tracking
-
-```http
-POST /api/shipments/track-batch
-Content-Type: application/json
-
-{
-  "items": [
-    { "carrier": "maersk", "trackingNumber": "MSKU1234567" },
-    { "carrier": "msc", "trackingNumber": "MEDU9876543" }
-  ]
-}
-```
-
----
-
-## Quick Start Guide
+## Quick Start & How to Run
 
 ### 1. Prerequisites
+- **Node.js**: `v20.x` or `v24.x` (Recommended: Node 24 for built-in `node:sqlite`)
+- **Package Manager**: `npm` v10+
 
-- **Node.js**: v18.0.0 or higher (v20 or v22 LTS recommended)
-- **npm**: v9.0.0 or higher
-- **TinyFish API Key**: Obtain from [agent.tinyfish.ai/api-keys](https://agent.tinyfish.ai/api-keys)
-- **Git**: Installed and configured on your workstation
-
-### 2. Clone or Initialize Repository
-
-If cloning from GitHub:
+### 2. Clone Repository
 ```bash
 git clone https://github.com/Abpattar/Navora.git
 cd Navora
 ```
 
 ### 3. Install Dependencies
-
 ```bash
+# If your environment experiences IPv6 registry timeouts, run:
+NODE_OPTIONS="--dns-result-order=ipv4first" npm install
+# Or standard install:
 npm install
 ```
 
-### 4. Configure Environment Variables
-
-Copy the example environment configuration:
+### 4. Environment Configuration
+Create a `.env.local` file by copying `.env.example`:
 ```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local` to add your TinyFish API key:
+Configure your variables in `.env.local`:
 ```env
+# Required for live web scraping with TinyFish agents
 TINYFISH_API_KEY=your_actual_tinyfish_api_key_here
-NEXT_PUBLIC_APP_NAME=Navora Freight Command Center
+
+# Base URL for server-side self-calls (defaults to localhost:3000)
+APP_BASE_URL=http://localhost:3000
+
+# Optional custom SQLite database location (defaults to .data/freightcommand.db)
+DATABASE_PATH=.data/freightcommand.db
 ```
 
-> **Note**: `.env.local` is listed in `.gitignore` and must **never** be committed to version control.
-
 ### 5. Run Development Server
-
 ```bash
 npm run dev
 ```
+Open [http://localhost:3000](http://localhost:3000) in your browser. The application will automatically redirect to `/dashboard`.
 
-Navigate to [http://localhost:3000](http://localhost:3000) in your browser. Verify the service and key status at [http://localhost:3000/api/health](http://localhost:3000/api/health).
-
----
-
-### 6. GitHub Setup Instructions
-
-To link and push this codebase to the repository [https://github.com/Abpattar/Navora.git](https://github.com/Abpattar/Navora.git):
-
+### 6. Verification & Automated Tests
+Execute the comprehensive test and validation suites:
 ```bash
-# 1. Initialize local repository
-git init
+# Run unit & integration test suites (Vitest)
+npm test
 
-# 2. Stage all project files (ignoring node_modules and .env.local)
-git add .
+# Verify strict TypeScript compilation
+npm run typecheck
 
-# 3. Commit the project
-git commit -m "feat: complete Navora global freight command center codebase"
+# Verify ESLint rules
+npm run lint
 
-# 4. Set default branch to main
-git branch -M main
-
-# 5. Link the remote origin
-git remote add origin https://github.com/Abpattar/Navora.git
-
-# 6. Push to GitHub
-git push -u origin main --force
+# Build production bundle
+npm run build
 ```
 
 ---
 
-## Available Scripts
+## Testing & Quality Assurance
 
-| Command | Action |
-| :--- | :--- |
-| `npm run dev` | Starts the Next.js development server at `http://localhost:3000` |
-| `npm run build` | Compiles the production application bundle |
-| `npm start` | Launches the built production server |
-| `npm run typecheck` | Runs TypeScript compiler checks without emitting files (`tsc --noEmit`) |
-| `npm run lint` | Runs ESLint across the codebase using Next.js rules |
-| `npm test` | Runs the Vitest test suite (`tests/validation.test.ts`) |
+The application features 6 specialized test suites with **34 automated test cases**:
 
----
-
-## Design Philosophy & Limitations
-
-- **No Synthetic Placeholders**: Missing values are rendered as `Unavailable` or omitted. The app never substitutes dummy timelines.
-- **No CAPTCHA Bypass**: The browser agent will not attempt to solve security challenges or bypass firewall protections. If blocked, it stops and reports the barrier honestly.
-- **Client Key Isolation**: The TinyFish key is never sent to the browser or embedded into static client assets.
-- **Stateless Server Architecture**: Tracking history is stored client-side in `localStorage`. There is no backend database requirement, allowing rapid deployment to serverless platforms (e.g. Vercel, Netlify).
+1. **Validation & Security** ([tests/validation.test.ts](tests/validation.test.ts)):
+   - Verifies input character bounds, container reference formatting, carrier domain allowlists, and SSRF external URL guards.
+2. **Excel Ingestion & Export** ([tests/excel.test.ts](tests/excel.test.ts)):
+   - Verifies SheetJS parsing across multiple header formats (`Container ID`, `Shipping Line`, `Promised Delivery`), carrier name normalization, and enriched export generation.
+3. **Logistics Intelligence** ([tests/logistics.test.ts](tests/logistics.test.ts)):
+   - Verifies timezone offset handling, positive/negative ETA comparisons, SLA breach detection (>24h delay, customs holds), carrier demurrage calculations, port override rates, and equipment detention.
+4. **Geographical Resolution** ([tests/map.test.ts](tests/map.test.ts)):
+   - Tests Priority 1 (carrier GPS) $\rightarrow$ Priority 2 (UN/LOCODE ports) $\rightarrow$ Priority 3 (major cities) $\rightarrow$ Priority 4 (`UNKNOWN` with null coordinates). Validates that coordinates are never hallucinated.
+5. **TinyFish Agent & Concurrency** ([tests/tinyfish.test.ts](tests/tinyfish.test.ts)):
+   - Verifies maximum 2 concurrent agent execution, prompt safety injection constraints, and SSE chunk parsing.
+6. **Warehouse Rescheduling Safety** ([tests/warehouse.test.ts](tests/warehouse.test.ts)):
+   - Validates that replacement dock reservations must be confirmed before prior bookings are transitioned, preventing warehouse booking loss during network or booking failures.
 
 ---
 
-## Hackathon Documentation Index
+## Autonomous Rescheduling Safety Failsafe
 
-For team split guidelines, carrier test procedures, and presentation prep, refer to:
-- [HACKATHON_QUICKSTART.md](./HACKATHON_QUICKSTART.md) — 5-minute onboarding sheet for teammates
-- [API_CONTRACT.md](./API_CONTRACT.md) — JSON schema and HTTP status specifications
-- [CARRIER_TEST_CHECKLIST.md](./CARRIER_TEST_CHECKLIST.md) — Manual verification steps per shipping line
-- [DEMO_SCRIPT.md](./DEMO_SCRIPT.md) — 90-second live demonstration script
-- [TEAM_SPLIT.md](./TEAM_SPLIT.md) — Responsibility matrix (Backend, Frontend, QA)
-- [CONTRIBUTING.md](./CONTRIBUTING.md) — Git workflow and pull request guidelines
+In high-volume logistics, dropping a warehouse booking without securing a replacement causes costly gate demurrage and carrier detention penalties. FREIGHTCOMMAND implements an **Atomic Booking Failsafe**:
+
+```text
+Operator / Delay Alert
+          │
+          ▼
+1. Query available dock slots for revised vessel ETA (/api/warehouse/slots)
+          │
+          ▼
+2. Issue replacement reservation with unique key WH-CONF-[TIMESTAMP]
+          │
+     ┌────┴───────────────────────────┐
+     │ Was replacement confirmed?     │
+     └────┬───────────────────────┬───┘
+          │ YES                   │ NO (Failure / Full)
+          ▼                       ▼
+3. Mark prior booking     3. Preserve original booking!
+   as 'RESCHEDULED'.         Emit failure alert.
+   Link replacement ID.      Zero loss of warehouse capacity.
+```
 
 ---
 
-*Built with precision for the Global Freight Hackathon.*
+## Carrier Registry & Integrations
+
+The platform features built-in support and domain allowlists for 16 major ocean liners, intermodal tracking systems, and domestic freight operators:
+
+- **Ocean Liners**: Maersk, MSC, CMA CGM, Hapag-Lloyd, COSCO Shipping, Evergreen Marine, ONE (Ocean Network Express), OOCL, ZIM, Yang Ming.
+- **Indian Logistics & Intermodal**: Logistics Data Bank (LDB India / NICDC), BlueDart Express, Delhivery, TCI Express, V-Xpress.
+- **Air Freight**: IATA Air Cargo Tracking.
+
+---
+
+## License
+
+This project is licensed under the MIT License.
