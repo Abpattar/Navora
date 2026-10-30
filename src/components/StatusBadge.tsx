@@ -7,6 +7,8 @@ const labels: Record<LookupStatus, string> = {
   blocked: 'Restricted',
   unsupported: 'Unsupported',
   error: 'Lookup error',
+  pending: 'Queued',
+  running: 'Tracking…',
 };
 
 export default function StatusBadge({ status }: { status: LookupStatus | string }) {

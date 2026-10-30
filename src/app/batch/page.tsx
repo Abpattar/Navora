@@ -1,111 +1,465 @@
 'use client';
 
-import { ChangeEvent, useRef, useState } from 'react';
-import { AlertTriangle, ArrowDownToLine, FileSpreadsheet, LoaderCircle, Plus, Play, Trash2, Upload } from 'lucide-react';
+import React, { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowRight,
+  Bot,
+  CheckCircle2,
+  Clock,
+  Download,
+  FileSpreadsheet,
+  Globe2,
+  LoaderCircle,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { CARRIERS } from '@/lib/carriers';
-import { exportToCsv } from '@/lib/storage';
-import { useShipmentHistory } from '@/lib/useShipmentHistory';
-import type { CarrierId, ShipmentResult } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
 import { displayValue, formatDate } from '@/lib/format';
+import type { CarrierId, DockId, ManifestImportRow, ManifestImportSummary } from '@/lib/types';
 
-type Row = { id: string; carrier: CarrierId; trackingNumber: string };
-type RunResult = { rowId: string; success: boolean; result?: ShipmentResult; error?: string };
+export default function ManifestBatchPage() {
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [summary, setSummary] = useState<ManifestImportSummary | null>(null);
+  const [editedRows, setEditedRows] = useState<ManifestImportRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [queueStats, setQueueStats] = useState<{ queued: number; running: number; completed: number; failed: number } | null>(null);
+  const [filterQuery, setFilterQuery] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (char === '"' && quoted && text[i + 1] === '"') { cell += '"'; i++; }
-    else if (char === '"') quoted = !quoted;
-    else if (char === ',' && !quoted) { row.push(cell.trim()); cell = ''; }
-    else if ((char === '\n' || char === '\r') && !quoted) {
-      if (char === '\r' && text[i + 1] === '\n') i++;
-      row.push(cell.trim()); cell = '';
-      if (row.some((value) => value.length)) rows.push(row);
-      row = [];
-    } else cell += char;
-  }
-  row.push(cell.trim());
-  if (row.some((value) => value.length)) rows.push(row);
-  return rows;
-}
+  // Poll queue telemetry periodically if there are running or queued tasks
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
 
-function normalizeCarrier(value: string): CarrierId | null {
-  const key = value.trim().toLowerCase().replaceAll('_', '-').replaceAll(' ', '-');
-  const aliases: Record<string, CarrierId> = { 'maersk': 'maersk', 'msc': 'msc', 'cma-cgm': 'cma-cgm', 'cma-cgm-line': 'cma-cgm', 'hapag-lloyd': 'hapag-lloyd', 'cosco': 'cosco', 'cosco-shipping-lines': 'cosco', 'evergreen': 'evergreen', 'one': 'one', 'oocl': 'oocl', 'zim': 'zim', 'yang-ming': 'yang-ming' };
-  return aliases[key] ?? null;
-}
+    async function checkQueue() {
+      try {
+        const res = await fetch('/api/queue/status');
+        if (res.ok) {
+          const data = await res.json();
+          setQueueStats(data.stats);
+        }
+      } catch {
+        // ignore
+      }
+    }
 
-export default function BatchPage() {
-  const { addResult } = useShipmentHistory();
-  const [rows, setRows] = useState<Row[]>([{ id: 'row-1', carrier: 'maersk', trackingNumber: '' }]);
-  const [results, setResults] = useState<RunResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const fileInput = useRef<HTMLInputElement>(null);
+    void checkQueue();
+    interval = setInterval(checkQueue, 3000);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
-  function updateRow(id: string, change: Partial<Row>) { setRows((current) => current.map((row) => row.id === id ? { ...row, ...change } : row)); }
-  function addRow() {
-    if (rows.length >= 5) return;
-    setRows((current) => [...current, { id: `row-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`, carrier: 'maersk', trackingNumber: '' }]);
-  }
-  function removeRow(id: string) { setRows((current) => current.length > 1 ? current.filter((row) => row.id !== id) : current); }
+  // Handle file upload
+  async function handleFileUpload(file: File) {
+    setError(null);
+    setSuccessMessage(null);
+    setUploading(true);
 
-  async function handleCsv(event: ChangeEvent<HTMLInputElement>) {
-    setError('');
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.csv')) { setError('Please upload a CSV file.'); event.target.value = ''; return; }
+    const formData = new FormData();
+    formData.append('file', file);
+
     try {
-      const raw = parseCsv(await file.text());
-      if (raw.length < 2) throw new Error('CSV must contain a header row and at least one shipment row.');
-      const headers = raw[0].map((item) => item.toLowerCase().replaceAll(' ', '').replaceAll('_', ''));
-      const carrierIndex = headers.findIndex((item) => ['carrier', 'shippingcarrier'].includes(item));
-      const refIndex = headers.findIndex((item) => ['trackingnumber', 'trackingreference', 'containernumber', 'billoflading', 'bol', 'reference'].includes(item));
-      if (carrierIndex === -1 || refIndex === -1) throw new Error('CSV needs carrier and trackingNumber (or reference) columns.');
-      const imported: Row[] = raw.slice(1).map((data, index) => {
-        const rawCarrier = (data[carrierIndex] ?? '').trim();
-        const normalized = normalizeCarrier(rawCarrier);
-        if (!normalized) throw new Error(`Unknown carrier in CSV row ${index + 2}: "${rawCarrier}". Use a supported carrier name or ID.`);
-        return { id: `csv-${Date.now()}-${index}`, carrier: normalized, trackingNumber: (data[refIndex] ?? '').trim() };
-      }).filter((item) => item.trackingNumber.length > 0);
-      if (!imported.length) throw new Error('No tracking references were found in the CSV.');
-      if (imported.length > 5) throw new Error(`The CSV contains ${imported.length} references. The current limit is five; split the file into smaller batches.`);
-      setRows(imported);
-      setResults([]);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not read the CSV.'); }
-    finally { event.target.value = ''; }
+      const res = await fetch('/api/manifest/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to parse manifest file');
+      }
+
+      setSummary(data.summary);
+      setEditedRows(data.summary.rows);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not process file');
+    } finally {
+      setUploading(false);
+    }
   }
 
-  async function runBatch() {
-    setError(''); setResults([]);
-    const valid = rows.filter((row) => row.trackingNumber.trim().length >= 3);
-    if (!valid.length) { setError('Add at least one tracking reference with three or more characters.'); return; }
-    if (valid.length > 5) { setError('A batch can contain at most five shipments.'); return; }
-    setLoading(true);
+  const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void handleFileUpload(file);
+    e.target.value = '';
+  };
+
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void handleFileUpload(file);
+  };
+
+  // Row editing helpers
+  const updateRow = (rowId: string, partial: Partial<ManifestImportRow>) => {
+    setEditedRows((prev) =>
+      prev.map((r) => {
+        if (r.rowId !== rowId) return r;
+        const updated = { ...r, ...partial };
+        // Re-check validity
+        const errs: string[] = [];
+        if (!updated.trackingNumber || updated.trackingNumber.length < 3) {
+          errs.push('Tracking number must be >= 3 chars.');
+        }
+        updated.isValid = errs.length === 0;
+        updated.errors = errs;
+        return updated;
+      })
+    );
+  };
+
+  const deleteRow = (rowId: string) => {
+    setEditedRows((prev) => prev.filter((r) => r.rowId !== rowId));
+  };
+
+  const addManualRow = () => {
+    const newRow: ManifestImportRow = {
+      rowId: `manual-${Date.now()}`,
+      shipmentId: `FC-${Math.floor(1000 + Math.random() * 9000)}`,
+      trackingNumber: '',
+      carrier: 'maersk',
+      carrierRaw: 'Maersk',
+      promisedEta: null,
+      assignedDock: 'Dock A',
+      isValid: false,
+      errors: ['Enter tracking reference'],
+    };
+    setEditedRows((prev) => [newRow, ...prev]);
+  };
+
+  // Commit manifest and enqueue tracking
+  const commitManifest = async () => {
+    if (!editedRows.length) return;
+    setCommitting(true);
+    setError(null);
+
     try {
-      const response = await fetch('/api/shipments/track-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: valid.map(({ carrier, trackingNumber }) => ({ carrier, trackingNumber: trackingNumber.trim() })) }) });
-      const body = await response.json() as { success?: boolean; error?: string; results?: Array<{ index: number; success: boolean; result?: ShipmentResult; error?: string }> };
-      if (!response.ok) throw new Error(body.error ?? 'The batch request could not be completed.');
-      const mapped: RunResult[] = (body.results ?? []).map((item) => ({ rowId: valid[item.index]?.id ?? `result-${item.index}`, success: item.success, result: item.result, error: item.error }));
-      setResults(mapped);
-      mapped.forEach((item) => { if (item.result) addResult(item.result); });
-    } catch (err) { setError(err instanceof Error ? err.message : 'Batch tracking failed.'); }
-    finally { setLoading(false); }
-  }
+      const res = await fetch('/api/manifest/commit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rows: editedRows,
+          manifestId: summary?.id,
+        }),
+      });
 
-  return <>
-    <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> MULTI-SHIPMENT WORKFLOW</div><h1>Batch tracking<span className="heading-period">.</span></h1><p>Check up to five shipment references in one request. Results still come from real carrier lookups.</p></div><div className="heading-actions"><button className="button button-secondary" onClick={() => fileInput.current?.click()}><Upload size={16} /> Import CSV</button><input ref={fileInput} type="file" accept=".csv,text/csv" hidden onChange={handleCsv} /></div></div>
-    <section className="content-panel batch-panel"><div className="section-heading"><div><div className="eyebrow">BATCH INPUT</div><h2>Shipment manifest</h2><p>Enter one carrier and reference per row. Blank rows are ignored.</p></div><span className="count-pill">{rows.length} / 5 rows</span></div>
-      <div className="batch-rows"><div className="batch-row batch-row-header"><span>Carrier</span><span>Tracking reference</span><span>Action</span></div>{rows.map((row) => <div className="batch-row" key={row.id}><label className="visually-hidden" htmlFor={`${row.id}-carrier`}>Carrier</label><select id={`${row.id}-carrier`} value={row.carrier} onChange={(event) => updateRow(row.id, { carrier: event.target.value as CarrierId })}>{CARRIERS.map((carrier) => <option value={carrier.id} key={carrier.id}>{carrier.name}</option>)}</select><label className="visually-hidden" htmlFor={`${row.id}-reference`}>Tracking reference</label><input id={`${row.id}-reference`} value={row.trackingNumber} onChange={(event) => updateRow(row.id, { trackingNumber: event.target.value })} placeholder="Enter a valid reference" maxLength={80} /><button className="row-action danger-action" title="Remove row" aria-label="Remove row" onClick={() => removeRow(row.id)} disabled={rows.length === 1}><Trash2 size={16} /></button></div>)}</div>
-      <div className="batch-controls"><button className="button button-secondary" onClick={addRow} disabled={rows.length >= 5}><Plus size={16} /> Add another shipment</button><div><button className="button button-primary" onClick={runBatch} disabled={loading}>{loading ? <><LoaderCircle className="spin" size={17} /> Checking shipments…</> : <><Play size={16} /> Run live batch</>}</button></div></div>
-      {error && <div className="inline-alert inline-alert-error"><AlertTriangle size={17} /><p>{error}</p></div>}
-      {loading && <div className="lookup-progress"><LoaderCircle className="spin" size={19} /><div><strong>Batch lookup running</strong><p>The server limits concurrent browser tasks. This can take a little while for multiple carriers.</p></div></div>}
-    </section>
-    {results.length > 0 && <section className="content-panel batch-results-panel"><div className="section-heading"><div><div className="eyebrow">LIVE RESULTS</div><h2>Batch report</h2><p>Each row represents one attempted carrier lookup.</p></div><button className="button button-secondary" onClick={() => exportToCsv(results.flatMap((item) => item.result ? [item.result] : []), 'freight-batch-results.csv')} disabled={!results.some((item) => item.result)}><ArrowDownToLine size={16} /> Export successful results</button></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Carrier / reference</th><th>Outcome</th><th>Latest status</th><th>Location</th><th>Retrieved</th><th>Source</th></tr></thead><tbody>{results.map((item) => <tr key={item.rowId}><td><div className="table-carrier">{item.result?.carrierName ?? rows.find((row) => row.id === item.rowId)?.carrier ?? 'Shipment'}</div><div className="table-reference">{item.result?.trackingNumber ?? rows.find((row) => row.id === item.rowId)?.trackingNumber ?? 'Reference'}</div></td><td>{item.result ? <StatusBadge status={item.result.lookupStatus} /> : <span className="status-badge status-error">Failed</span>}<div className="table-secondary">{item.error ?? ''}</div></td><td>{displayValue(item.result?.status)}</td><td>{displayValue(item.result?.location)}</td><td>{item.result ? formatDate(item.result.retrievedAt) : 'Unavailable'}</td><td>{item.result && <a className="source-link" href={item.result.sourceUrl} target="_blank" rel="noreferrer">Open source <ArrowDownToLine size={13} /></a>}</td></tr>)}</tbody></table></div><div className="note-strip"><FileSpreadsheet size={16} /><span>For CSV import, use headers <code>carrier</code> and <code>trackingNumber</code>. Carrier values should match a listed carrier name or ID.</span></div></section>}
-  </>;
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to commit manifest');
+      }
+
+      setSuccessMessage(
+        `Successfully committed ${data.importedCount} shipments to database. Enqueued ${data.enqueuedCount} lookups across max 2 concurrent TinyFish agent workers.`
+      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Manifest commit failed');
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const filteredRows = editedRows.filter((r) => {
+    if (!filterQuery) return true;
+    const q = filterQuery.toLowerCase();
+    return (
+      r.shipmentId.toLowerCase().includes(q) ||
+      r.trackingNumber.toLowerCase().includes(q) ||
+      r.carrier.toLowerCase().includes(q) ||
+      r.carrierRaw.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">
+            <span className="eyebrow-line" /> SHIPMENT MANIFEST & EXCEL ENGINE
+          </div>
+          <h1>
+            Manifest Management<span className="heading-period">.</span>
+          </h1>
+          <p>
+            Upload multi-carrier spreadsheets (XLSX, XLS, CSV). Controlled background execution enqueues lookups with strict 2-agent concurrency.
+          </p>
+        </div>
+        <div className="heading-actions">
+          <a
+            href="/api/manifest/export?format=xlsx"
+            className="button button-secondary"
+            title="Download enriched XLSX with tracking, SLA, demurrage, and confirmation keys"
+          >
+            <Download size={16} /> Enriched Excel (.xlsx)
+          </a>
+          <a
+            href="/api/manifest/export?format=csv"
+            className="button button-secondary"
+            title="Download CSV export"
+          >
+            <ArrowDownToLine size={16} /> Export CSV
+          </a>
+        </div>
+      </div>
+
+      {/* Drag & Drop Upload Zone */}
+      <section
+        className={`content-panel manifest-dropzone ${dragOver ? 'dropzone-active' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          hidden
+          onChange={onFileInputChange}
+        />
+        <div className="dropzone-content">
+          <div className="dropzone-icon-halo">
+            {uploading ? (
+              <LoaderCircle size={32} className="spin text-sky-400" />
+            ) : (
+              <FileSpreadsheet size={32} className="text-sky-400" />
+            )}
+          </div>
+          <h3>{uploading ? 'Parsing spreadsheet columns…' : 'Drop shipment manifest here or click to browse'}</h3>
+          <p>
+            Supports XLSX, XLS, and CSV. Automatically detects Shipment ID, Container No, Carrier, Promised ETA, and Dock Assignment.
+          </p>
+          <div className="dropzone-badges">
+            <span className="format-tag">.XLSX</span>
+            <span className="format-tag">.XLS</span>
+            <span className="format-tag">.CSV</span>
+            <span className="format-tag">No 5-Shipment Restriction</span>
+          </div>
+        </div>
+      </section>
+
+      {error && (
+        <div className="inline-alert inline-alert-error mb-6">
+          <AlertTriangle size={18} />
+          <p>{error}</p>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="inline-alert inline-alert-success mb-6">
+          <CheckCircle2 size={18} />
+          <div className="success-content">
+            <strong>{successMessage}</strong>
+            <div className="success-links">
+              <Link href="/live-map" className="text-link">
+                View on Live Map <Globe2 size={13} />
+              </Link>
+              <span>·</span>
+              <Link href="/agent-console" className="text-link">
+                Inspect Agent Telemetry <Bot size={13} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Queue Monitor Strip */}
+      {queueStats && (queueStats.queued > 0 || queueStats.running > 0) && (
+        <div className="queue-telemetry-banner mb-6">
+          <div className="queue-banner-title">
+            <LoaderCircle size={18} className="spin text-sky-400" />
+            <div>
+              <strong>Controlled Agent Queue Running</strong>
+              <span>Concurrency limited to exactly 2 simultaneous TinyFish remote browsers</span>
+            </div>
+          </div>
+          <div className="queue-stat-pills">
+            <span className="queue-pill pill-running">Running: {queueStats.running} / 2</span>
+            <span className="queue-pill pill-queued">Queued: {queueStats.queued}</span>
+            <span className="queue-pill pill-completed">Completed: {queueStats.completed}</span>
+            {queueStats.failed > 0 && <span className="queue-pill pill-failed">Failed: {queueStats.failed}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Manifest Table & Editing Workspace */}
+      {editedRows.length > 0 && (
+        <section className="content-panel manifest-preview-panel">
+          <div className="section-heading">
+            <div>
+              <div className="eyebrow">IMPORT PREVIEW & VERIFICATION</div>
+              <h2>Shipment Manifest Workspace</h2>
+              <p>
+                Review normalized fields, correct warnings, and commit rows for automated tracking.
+              </p>
+            </div>
+            <div className="heading-actions">
+              <button type="button" className="button button-secondary" onClick={addManualRow}>
+                <Plus size={16} /> Add Row
+              </button>
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={commitManifest}
+                disabled={committing || editedRows.every((r) => !r.isValid)}
+              >
+                {committing ? (
+                  <>
+                    <LoaderCircle size={16} className="spin" /> Enqueueing…
+                  </>
+                ) : (
+                  <>
+                    <Play size={16} /> Commit & Dispatch Tracking
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="manifest-table-toolbar">
+            <div className="search-field">
+              <Search size={16} />
+              <input
+                type="text"
+                placeholder="Search shipment ID, container reference, or carrier…"
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+              />
+            </div>
+            <div className="manifest-summary-badges">
+              <span className="summary-badge badge-valid">
+                <CheckCircle2 size={13} /> {editedRows.filter((r) => r.isValid).length} Valid
+              </span>
+              {editedRows.some((r) => !r.isValid) && (
+                <span className="summary-badge badge-invalid">
+                  <AlertCircle size={13} /> {editedRows.filter((r) => !r.isValid).length} Require Correction
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Data Table */}
+          <div className="table-scroll">
+            <table className="data-table manifest-data-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Shipment ID</th>
+                  <th>Tracking / Container No.</th>
+                  <th>Carrier</th>
+                  <th>Promised ETA</th>
+                  <th>Assigned Dock</th>
+                  <th>Origin / Dest</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row) => (
+                  <tr key={row.rowId} className={!row.isValid ? 'row-has-errors' : ''}>
+                    <td>
+                      {row.isValid ? (
+                        <span className="status-pill-valid">
+                          <CheckCircle2 size={14} /> Valid
+                        </span>
+                      ) : (
+                        <span className="status-pill-invalid" title={row.errors.join('; ')}>
+                          <AlertTriangle size={14} /> Issues
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.shipmentId}
+                        onChange={(e) => updateRow(row.rowId, { shipmentId: e.target.value })}
+                        className="table-inline-input"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={row.trackingNumber}
+                        onChange={(e) => updateRow(row.rowId, { trackingNumber: e.target.value })}
+                        placeholder="e.g. MSKU1234567"
+                        className="table-inline-input"
+                      />
+                      {row.errors.length > 0 && (
+                        <div className="row-inline-error">{row.errors[0]}</div>
+                      )}
+                    </td>
+                    <td>
+                      <select
+                        value={row.carrier}
+                        onChange={(e) => updateRow(row.rowId, { carrier: e.target.value as CarrierId })}
+                        className="table-inline-select"
+                      >
+                        {CARRIERS.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        type="datetime-local"
+                        value={row.promisedEta ? row.promisedEta.slice(0, 16) : ''}
+                        onChange={(e) => updateRow(row.rowId, { promisedEta: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                        className="table-inline-input"
+                      />
+                    </td>
+                    <td>
+                      <select
+                        value={row.assignedDock || ''}
+                        onChange={(e) => updateRow(row.rowId, { assignedDock: (e.target.value || null) as DockId | null })}
+                        className="table-inline-select"
+                      >
+                        <option value="">Unassigned</option>
+                        <option value="Dock A">Dock A</option>
+                        <option value="Dock B">Dock B</option>
+                        <option value="Dock C">Dock C</option>
+                      </select>
+                    </td>
+                    <td>
+                      <div className="table-secondary">
+                        {row.origin || 'Origin'} → {row.destination || 'Dest'}
+                      </div>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => deleteRow(row.rowId)}
+                        className="row-action danger-action"
+                        title="Delete row"
+                        aria-label="Delete row"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
+  );
 }

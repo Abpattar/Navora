@@ -22,14 +22,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, code: 'API_KEY_MISSING', error: 'TinyFish is not configured. Add TINYFISH_API_KEY to .env.local.' }, { status: 503 });
   }
 
+  const items = parsed.data;
   // Limit concurrency to two agent runs so batch requests don't launch five jobs at once.
   const results: Array<{ index: number; success: boolean; result?: unknown; error?: string }> = [];
   let nextIndex = 0;
   async function worker() {
     while (true) {
       const index = nextIndex++;
-      if (index >= parsed.data.length) return;
-      const item = parsed.data[index];
+      if (index >= items.length) return;
+      const item = items[index];
       const carrier = getCarrier(item.carrier);
       if (!carrier) {
         results.push({ index, success: false, error: 'Unsupported carrier.' });
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(2, parsed.data.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(2, items.length) }, () => worker()));
   results.sort((a, b) => a.index - b.index);
   return NextResponse.json({ success: results.every((item) => item.success), results }, { headers: { 'Cache-Control': 'no-store' } });
 }

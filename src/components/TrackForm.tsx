@@ -56,7 +56,7 @@ export default function TrackForm({ onResult, compact = false }: {
 
   return <div className={`track-panel ${compact ? 'track-panel-compact' : ''}`}>
     <div className="panel-heading">
-      <div><div className="eyebrow"><span className="eyebrow-line" /> LIVE CARRIER LOOKUP</div><h2>{compact ? 'Track a shipment' : 'Investigate a shipment'}</h2><p>Retrieve publicly available tracking information from the carrier's official website.</p></div>
+      <div><div className="eyebrow"><span className="eyebrow-line" /> LIVE CARRIER LOOKUP</div><h2>{compact ? 'Track a shipment' : 'Investigate a shipment'}</h2><p>Retrieve publicly available tracking information from the carrier&apos;s official website.</p></div>
       <div className="panel-heading-icon"><Search size={20} /></div>
     </div>
     <form className="tracking-form" onSubmit={submit}>
