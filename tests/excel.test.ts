@@ -131,4 +131,27 @@ describe('Excel & Manifest Engine', () => {
     expect(rows[0]['Booking Confirmation ID']).toBe('WH-CONF-DOCKA-123456');
     expect(rows[0]['Location Accuracy']).toBe('PORT_APPROXIMATE');
   });
+
+  it('parses sample-aggregator-manifest.xlsx with all 7 aggregator and third-party logistics test IDs', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const filePath = path.resolve(process.cwd(), 'sample-aggregator-manifest.xlsx');
+    const buffer = fs.readFileSync(filePath);
+
+    const summary = parseSpreadsheetBuffer(buffer, 'sample-aggregator-manifest.xlsx');
+    expect(summary.totalRows).toBe(7);
+    expect(summary.validRows).toBe(7);
+    expect(summary.errorRows).toBe(0);
+
+    const carriers = summary.rows.map((r) => r.carrier);
+    expect(carriers).toEqual([
+      'fedex',
+      'ups',
+      'usps',
+      'dhl',
+      'bluedart',
+      'amazon-shipping',
+      'tpc',
+    ]);
+  });
 });

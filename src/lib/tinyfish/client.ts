@@ -76,8 +76,12 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
     );
   }
 
+  // Interpolate tracking reference if carrier template specifies {ID}, {TRACKING_ID}, or {POD_NO}
+  const targetTrackingUrl = options.carrier.trackingUrl
+    .replace(/\{(ID|TRACKING_ID|POD_NO)\}/gi, encodeURIComponent(options.trackingNumber));
+
   // Security: Domain allowlist and SSRF protection
-  const securityCheck = isSafeExternalUrl(options.carrier.trackingUrl, options.carrier.allowedDomains);
+  const securityCheck = isSafeExternalUrl(targetTrackingUrl, options.carrier.allowedDomains);
   if (!securityCheck.safe) {
     throw new TinyFishLookupError(
       `Navigation blocked for security: ${securityCheck.reason}`,
@@ -106,7 +110,7 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
         'Return a structured object matching the output schema with complete milestones, ports, departure/arrival timestamps, and vessel/voyage details if visible.',
         'lookup_outcome must be one of: success, not_found, needs_login, blocked, unsupported, error.',
         'Use "Unavailable" for any missing text field.',
-        `The official tracking portal is ${options.carrier.trackingUrl}.`,
+        `The official tracking portal is ${targetTrackingUrl}.`,
       ].join('\n');
 
       let streamingUrl: string | undefined;
@@ -123,7 +127,7 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
             'Accept': 'text/event-stream',
           },
           body: JSON.stringify({
-            url: options.carrier.trackingUrl,
+            url: targetTrackingUrl,
             goal,
             browser_profile: 'stealth',
             output_schema: COMPREHENSIVE_OUTPUT_SCHEMA,

@@ -47,7 +47,8 @@ export function parseSpreadsheetBuffer(buffer: ArrayBuffer | Uint8Array, filenam
   ]);
 
   const promisedEtaIdx = findMatchingHeader(headerKeys, [
-    /^promisedeta$/, /^expectedeta$/, /^eta$/, /^arrivaldate$/, /^deliverydate$/, /^expectedarrival$/
+    /^promisedeta$/, /^expectedeta$/, /^eta$/, /^arrivaldate$/, /^deliverydate$/, /^expectedarrival$/,
+    /^promiseddelivery$/, /^delivery$/, /^promised$/
   ]);
 
   const dockIdx = findMatchingHeader(headerKeys, [

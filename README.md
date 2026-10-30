@@ -372,7 +372,25 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) in your browser. The application will automatically redirect to `/dashboard`.
 
 ### 6. Ready-to-Test Sample Manifests
-The repository includes pre-built, ready-to-test manifest files populated with real ISO 6346 container references and global carriers:
+The repository includes two pre-built, ready-to-test manifest files:
+
+#### A. Fast-Extraction Logistics Manifest (Aggregators, Direct APIs & Web Services)
+Direct courier portals (standard FedEx or UPS web frontends) typically rely on heavy Cloudflare/Akamai bot protection and CAPTCHAs. This manifest routes requests through third-party aggregators and unauthenticated public endpoints that serve structured HTML or internal JSON without aggressive anti-scraping walls:
+- **Excel Spreadsheet**: [`sample-aggregator-manifest.xlsx`](sample-aggregator-manifest.xlsx) *(also at `public/sample-aggregator-manifest.xlsx`)*
+- **CSV Spreadsheet**: [`sample-aggregator-manifest.csv`](sample-aggregator-manifest.csv) *(also at `public/sample-aggregator-manifest.csv`)*
+
+| Shipment ID | Tracking Number | Carrier / Provider | Origin | Destination | Promised Delivery | Extraction Endpoint & Scraping Rationale |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `SHP-FX-3988` | **`398891812948`** | FedEx Express | Memphis Hub, US | Los Angeles, US | `2026-11-03 14:00` | `https://www.track123.com/tracking/{ID}` — Clean DOM hierarchy & direct JSON responses without Cloudflare stops. |
+| `SHP-UP-1Z6R` | **`1Z6R42A40438792344`** | UPS Tracking | Louisville, US | Chicago, US | `2026-11-04 10:00` | `https://www.track123.com/tracking/{ID}` — Full event history rendered cleanly without browser-fingerprinting stops. |
+| `SHP-US-9500` | **`9500109441760092147847`** | USPS Tracking | New York JFK, US | Dallas, US | `2026-11-05 16:00` | `https://www.track123.com/tracking/{ID}` — Multi-stage scan checkpoints and facility timestamps parsed directly. |
+| `SHP-DH-3018` | **`30184465961`** | DHL Express | Frankfurt, DE | Mumbai, IN | `2026-11-04 12:00` | `https://www.track123.com/tracking/{ID}` — Standard 10/11-digit AWB extracted with zero browser challenges. |
+| `SHP-BD-1234` | **`12345678901`** | Blue Dart Express | Delhi Cargo, IN | Bangalore Hub, IN | `2026-11-02 09:00` | `https://www.bluedart.com/trackdartresultthirdparty` — Static SSR HTML tables without JS hydration or complex tokens. |
+| `SHP-AZ-1000` | **`100000000000`** | Amazon Shipping | Bhiwandi FC, IN | Hyderabad Hub, IN | `2026-11-03 11:00` | `https://track.amazon.in/api/tracker/{ID}` — Direct unauthenticated internal API returning nested JSON (progressTracker, eventHistory). |
+| `SHP-TP-BLR1` | **`BLR1234567`** | The Professional Couriers | Chennai Central, IN | Kochi Port, IN | `2026-11-04 15:00` | `https://www.tpcindia.com/TPCWebService/TrackMobDe.ashx?podno={ID}` — Raw plain text feed for mobile apps; completely bypasses main website CAPTCHA. |
+
+#### B. Ocean Container Freight Manifest
+Pre-built manifest populated with standard ISO 6346 ocean container references:
 - **Excel Spreadsheet**: [`sample-manifest.xlsx`](sample-manifest.xlsx) *(also at `public/sample-manifest.xlsx`)*
 - **CSV Spreadsheet**: [`sample-manifest.csv`](sample-manifest.csv) *(also at `public/sample-manifest.csv`)*
 
@@ -386,8 +404,8 @@ The repository includes pre-built, ready-to-test manifest files populated with r
 
 #### Testing the Full Workflow:
 1. Open **[http://localhost:3000/batch](http://localhost:3000/batch)**.
-2. Click the blue **`✨ Load Demo Manifest`** button in the top right to instantly load the sample manifest into the preview grid (or drag-and-drop `sample-manifest.xlsx`).
-3. Click **`Commit 5 Shipments & Begin Tracking`**.
+2. Click **`⚡ Fast-Extract Manifest`** to immediately load the 7 third-party extractable parcels (or click **`✨ Ocean Manifest`** or drag-and-drop `sample-aggregator-manifest.xlsx`).
+3. Click **`Commit 7 Shipments & Begin Tracking`**.
 4. Navigate to **`/agent-console`** to observe live agent DOM tracking telemetry, **`/live-map`** for interactive geospatial coordinates, and **`/warehouse-portal`** for autonomous dock rescheduling.
 
 ### 7. Verification & Automated Tests

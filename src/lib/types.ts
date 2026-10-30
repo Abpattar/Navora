@@ -16,7 +16,14 @@ export type CarrierId =
   | 'delhivery'
   | 'tci-express'
   | 'v-xpress'
-  | 'air-cargo';
+  | 'air-cargo'
+  | 'track123'
+  | 'fedex'
+  | 'ups'
+  | 'usps'
+  | 'dhl'
+  | 'amazon-shipping'
+  | 'tpc';
 
 export interface CarrierConfig {
   id: CarrierId;

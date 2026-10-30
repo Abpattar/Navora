@@ -28,7 +28,7 @@ describe('Warehouse Reschedule Decision Engine', () => {
       preferredBufferHours: 4,
     });
 
-    const recommendedDate = new Date(rec.recommendedSlotTime);
+    const recommendedDate = new Date(rec.recommendedSlotTime!);
     const arrivalDate = new Date(revisedEta);
 
     // Recommended slot must be at least 4 hours after arrival
@@ -65,7 +65,7 @@ describe('Warehouse Reschedule Decision Engine', () => {
     });
 
     // Should choose another dock (Dock B, C, or D) or another time slot if Dock A at 12:00 is taken
-    const slotIsDockAAt12 = rec.recommendedDockId === 'Dock A' && new Date(rec.recommendedSlotTime).getTime() === conflictSlot.getTime();
+    const slotIsDockAAt12 = rec.recommendedDockId === 'Dock A' && new Date(rec.recommendedSlotTime!).getTime() === conflictSlot.getTime();
     expect(slotIsDockAAt12).toBe(false);
   });
 

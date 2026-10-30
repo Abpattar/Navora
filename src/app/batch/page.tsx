@@ -22,6 +22,7 @@ import {
   Trash2,
   Upload,
   X,
+  Zap,
 } from 'lucide-react';
 import { CARRIERS } from '@/lib/carriers';
 import StatusBadge from '@/components/StatusBadge';
@@ -105,23 +106,28 @@ export default function ManifestBatchPage() {
     if (file) void handleFileUpload(file);
   };
 
-  const loadSampleManifest = async () => {
+  const loadNamedManifest = async (filename: string) => {
     try {
       setUploading(true);
       setError(null);
-      const res = await fetch('/sample-manifest.xlsx');
-      if (!res.ok) throw new Error('Failed to load sample manifest');
+      const res = await fetch(`/${filename}`);
+      if (!res.ok) throw new Error(`Failed to load ${filename}`);
       const blob = await res.blob();
-      const file = new File([blob], 'sample-manifest.xlsx', {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      const file = new File([blob], filename, {
+        type: filename.endsWith('.csv')
+          ? 'text/csv'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
       await handleFileUpload(file);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not load sample manifest');
+      setError(err instanceof Error ? err.message : `Could not load ${filename}`);
     } finally {
       setUploading(false);
     }
   };
+
+  const loadSampleManifest = () => loadNamedManifest('sample-manifest.xlsx');
+  const loadAggregatorManifest = () => loadNamedManifest('sample-aggregator-manifest.xlsx');
 
   // Row editing helpers
   const updateRow = (rowId: string, partial: Partial<ManifestImportRow>) => {
@@ -220,19 +226,36 @@ export default function ManifestBatchPage() {
           <button
             type="button"
             className="button button-primary"
+            onClick={loadAggregatorManifest}
+            disabled={uploading}
+            title="Load live extractable test manifest (Track123, FedEx, UPS, USPS, DHL, BlueDart, Amazon, TPC)"
+          >
+            <Zap size={16} /> Fast-Extract Manifest
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
             onClick={loadSampleManifest}
             disabled={uploading}
-            title="Load ready-to-test sample manifest with real container numbers"
+            title="Load ready-to-test ocean shipping manifest with container numbers"
           >
-            <Sparkles size={16} /> Load Demo Manifest
+            <Sparkles size={16} /> Ocean Manifest
           </button>
+          <a
+            href="/sample-aggregator-manifest.xlsx"
+            download="sample-aggregator-manifest.xlsx"
+            className="button button-secondary"
+            title="Download clean third-party & aggregator template (.xlsx)"
+          >
+            <FileSpreadsheet size={16} /> Fast-Extract (.xlsx)
+          </a>
           <a
             href="/sample-manifest.xlsx"
             download="sample-manifest.xlsx"
             className="button button-secondary"
-            title="Download sample spreadsheet template"
+            title="Download ocean container sample spreadsheet template"
           >
-            <FileSpreadsheet size={16} /> Sample Template (.xlsx)
+            <FileSpreadsheet size={16} /> Ocean (.xlsx)
           </a>
           <a
             href="/api/manifest/export?format=xlsx"
@@ -289,6 +312,14 @@ export default function ManifestBatchPage() {
           </div>
         </div>
       </section>
+
+      {/* Aggregator Tip Box */}
+      <div className="inline-alert inline-alert-info mb-6" style={{ background: 'rgba(14, 165, 233, 0.08)', borderColor: 'rgba(14, 165, 233, 0.25)', borderRadius: '8px', padding: '12px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+        <Zap size={18} className="text-sky-400 mt-0.5 shrink-0" />
+        <div style={{ fontSize: '0.875rem', lineHeight: '1.4' }}>
+          <strong style={{ color: '#38bdf8' }}>Fast Automated Extraction Mode:</strong> Direct courier web frontends (standard FedEx or UPS) rely on heavy Cloudflare/Akamai bot-fingerprinting. Click <strong>Fast-Extract Manifest</strong> to test parcels routed through clean universal aggregators (Track123), direct unauthenticated APIs (Amazon Shipping), mobile feeds (The Professional Couriers), and static SSR portals (Blue Dart) for rapid end-to-end extraction.
+        </div>
+      </div>
 
       {error && (
         <div className="inline-alert inline-alert-error mb-6">
