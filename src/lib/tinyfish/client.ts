@@ -36,9 +36,6 @@ export const TRACKING_OUTPUT_SCHEMA = {
   ],
 };
 
-// Backward compatibility export
-export const COMPREHENSIVE_OUTPUT_SCHEMA = TRACKING_OUTPUT_SCHEMA;
-
 function asRecord(value: unknown): UnknownRecord | null {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value as UnknownRecord;
   if (typeof value === 'string') {
@@ -135,7 +132,7 @@ export interface RunAgentSSEOptions {
 }
 
 /**
- * Executes a TinyFish web agent using the official fast streaming SSE endpoint:
+ * Executes a TinyFish web agent using the official SSE streaming endpoint:
  * POST https://agent.tinyfish.ai/v1/automation/run-sse
  */
 export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<ShipmentResult> {
@@ -147,12 +144,8 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
     );
   }
 
-  // Interpolate tracking reference if carrier template specifies {ID}, {TRACKING_ID}, or {POD_NO}
-  const targetTrackingUrl = options.carrier.trackingUrl
-    .replace(/\{(ID|TRACKING_ID|POD_NO)\}/gi, encodeURIComponent(options.trackingNumber));
-
   // Security: Domain allowlist and SSRF protection
-  const securityCheck = isSafeExternalUrl(targetTrackingUrl, options.carrier.allowedDomains);
+  const securityCheck = isSafeExternalUrl(options.carrier.trackingUrl, options.carrier.allowedDomains);
   if (!securityCheck.safe) {
     throw new TinyFishLookupError(
       `Navigation blocked for security: ${securityCheck.reason}`,
@@ -184,11 +177,11 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
     'Return a structured object matching the output schema.',
     'lookup_outcome must be one of: success, not_found, needs_login, blocked, unsupported, error.',
     'Use the exact string "Unavailable" for any missing text field.',
-    `The official tracking portal is ${targetTrackingUrl}.`,
+    `The official tracking portal is ${options.carrier.trackingUrl}.`,
   ].join('\n');
 
   const controller = new AbortController();
-  const timeoutMs = options.timeoutMs || 60000;
+  const timeoutMs = options.timeoutMs || 90000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let streamingUrl: string | undefined;
@@ -205,7 +198,7 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
         'Accept': 'text/event-stream',
       },
       body: JSON.stringify({
-        url: targetTrackingUrl,
+        url: options.carrier.trackingUrl,
         goal,
         browser_profile: 'stealth',
         output_schema: TRACKING_OUTPUT_SCHEMA,
@@ -281,7 +274,7 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
   } catch (error: unknown) {
     clearTimeout(timeoutId);
     const message = error instanceof Error ? error.message : 'Agent stream aborted';
-    const isTimeout = /abort|timeout|timed out/i.test(message) || controller.signal.aborted;
+    const isTimeout = /abort|timeout|timed out/i.test(message);
 
     updateAgentRun(runId, {
       status: 'FAILED',
@@ -342,11 +335,11 @@ export async function runTrackingAgentSSE(options: RunAgentSSEOptions): Promise<
   const lookupStatus = normalizeOutcome(extracted.lookup_outcome ?? extracted.lookupStatus, { status, latestEvent, notes });
 
   const suppliedSource = cleanString(extracted.source_url ?? extracted.sourceUrl);
-  let sourceUrl = targetTrackingUrl;
+  let sourceUrl = options.carrier.trackingUrl;
   if (suppliedSource) {
     try {
       const candidate = new URL(suppliedSource);
-      const official = new URL(targetTrackingUrl);
+      const official = new URL(options.carrier.trackingUrl);
       if (candidate.protocol === 'https:' && (candidate.hostname === official.hostname || candidate.hostname.endsWith(`.${official.hostname}`))) {
         sourceUrl = candidate.toString();
       }

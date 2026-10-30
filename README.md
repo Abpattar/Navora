@@ -227,31 +227,20 @@ global-freight-command-center/
 │       │   ├── demurrage-calculator.ts   # Carrier tariff & port override financial engine
 │       │   ├── detention-calculator.ts   # Equipment return detention engine
 │       │   ├── risk-engine.ts            # Composite 0-100 risk score calculator
-│       │   ├── action-recommender.ts     # Action recommendation engine
-│       │   └── reschedule-decision-engine.ts # Warehouse Berth Capacity & Reschedule Decision Engine
-│       ├── orchestrator/
-│       │   └── index.ts                  # Unified Agent Orchestrator (strict max 2 concurrency ceiling)
-│       ├── workflow/
-│       │   └── shipment-workflow.ts      # Central READ -> DETECT -> DECIDE -> APPROVE -> WRITE -> VERIFY engine
+│       │   └── action-recommender.ts     # Action recommendation engine
 │       ├── queue/
 │       │   └── tracking-queue.ts         # Singleton queue with strict max 2 concurrency
 │       └── tinyfish/
-│           ├── client.ts                 # Dynamic READ Tracking Agent (SSE stream)
-│           ├── warehouse-agent.ts        # Dynamic WRITE Warehouse Rescheduling Agent
-│           ├── validation.ts             # Extraction verification & restriction detection
+│           ├── client.ts                 # TinyFish SSE streaming client
 │           └── search.ts                 # Maritime disruption scraper
 │
-└── tests/                                # Vitest test suites (10 test files, 45 tests)
+└── tests/                                # Vitest test suites (34 tests)
     ├── validation.test.ts                # Zod schemas, carrier allowlists, SSRF protection
     ├── excel.test.ts                     # SheetJS manifest upload, column matching & export
     ├── logistics.test.ts                 # SLA breaches, timezone ETAs, demurrage calculations
     ├── map.test.ts                       # UN/LOCODE geo matching, distances, zero-fake coords
     ├── tinyfish.test.ts                  # Concurrency limits, prompt security, event formats
-    ├── warehouse.test.ts                 # Dock reservations, capacity, atomic swap failsafe
-    ├── orchestrator.test.ts              # Global max 2 concurrency ceiling, queueing, cancellation
-    ├── decision-engine.test.ts           # Docks A-D, 2h slots, buffer time, conflict avoidance
-    ├── read-agent.test.ts                # COMPLETE, PARTIAL, BLOCKED, NOT_FOUND verification
-    └── workflow.test.ts                  # Closed loop READ->DETECT->DECIDE->APPROVE->WRITE->VERIFY
+    └── warehouse.test.ts                 # Dock reservations, capacity, atomic swap failsafe
 ```
 
 ---
@@ -317,11 +306,7 @@ global-freight-command-center/
 | `/api/queue/status` | `GET` | Real-time queue metrics: active agents (max 2), queued count, completed count |
 | `/api/warehouse/slots` | `GET` | Returns available dock slots for a specified date (`?date=YYYY-MM-DD`) |
 | `/api/warehouse/bookings`| `GET`, `POST` | Lists all dock reservations or creates a new confirmed booking |
-| `/api/warehouse/reschedule-booking` | `POST` | Atomic transaction endpoint: safely creates replacement booking with confirmation token before retiring prior reservation |
-| `/api/warehouse/reschedule-agent` | `POST` | Dispatches TinyFish WRITE agent to execute rescheduling with live SSE streaming |
-| `/api/workflow/execute` | `POST` | Initiates autonomous loop: READ -> DETECT -> DECIDE and pauses at human approval gate |
-| `/api/workflow/approve` | `POST` | Human gatekeeper approval: executes APPROVE -> WRITE (TinyFish agent) -> VERIFY (token check) |
-| `/api/workflow/status` | `GET` | Live state query for individual shipment workflow (`?shipmentId=...`) or all active workflows |
+| `/api/warehouse/reschedule-agent` | `POST` | Autonomous agent endpoint: safely reserves a replacement dock slot before retiring previous slot |
 | `/api/intelligence/disruptions` | `GET` | Lists active maritime disruptions, port congestion, and weather alerts |
 | `/api/agent/runs` | `GET` | Returns recent agent execution runs, duration, and terminal event logs |
 
@@ -371,44 +356,7 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser. The application will automatically redirect to `/dashboard`.
 
-### 6. Ready-to-Test Sample Manifests
-The repository includes two pre-built, ready-to-test manifest files:
-
-#### A. Fast-Extraction Logistics Manifest (Aggregators, Direct APIs & Web Services)
-Direct courier portals (standard FedEx or UPS web frontends) typically rely on heavy Cloudflare/Akamai bot protection and CAPTCHAs. This manifest routes requests through third-party aggregators and unauthenticated public endpoints that serve structured HTML or internal JSON without aggressive anti-scraping walls:
-- **Excel Spreadsheet**: [`sample-aggregator-manifest.xlsx`](sample-aggregator-manifest.xlsx) *(also at `public/sample-aggregator-manifest.xlsx`)*
-- **CSV Spreadsheet**: [`sample-aggregator-manifest.csv`](sample-aggregator-manifest.csv) *(also at `public/sample-aggregator-manifest.csv`)*
-
-| Shipment ID | Tracking Number | Carrier / Provider | Origin | Destination | Promised Delivery | Extraction Endpoint & Scraping Rationale |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `SHP-FX-3988` | **`398891812948`** | FedEx Express | Memphis Hub, US | Los Angeles, US | `2026-11-03 14:00` | `https://www.track123.com/tracking/{ID}` — Clean DOM hierarchy & direct JSON responses without Cloudflare stops. |
-| `SHP-UP-1Z6R` | **`1Z6R42A40438792344`** | UPS Tracking | Louisville, US | Chicago, US | `2026-11-04 10:00` | `https://www.track123.com/tracking/{ID}` — Full event history rendered cleanly without browser-fingerprinting stops. |
-| `SHP-US-9500` | **`9500109441760092147847`** | USPS Tracking | New York JFK, US | Dallas, US | `2026-11-05 16:00` | `https://www.track123.com/tracking/{ID}` — Multi-stage scan checkpoints and facility timestamps parsed directly. |
-| `SHP-DH-3018` | **`30184465961`** | DHL Express | Frankfurt, DE | Mumbai, IN | `2026-11-04 12:00` | `https://www.track123.com/tracking/{ID}` — Standard 10/11-digit AWB extracted with zero browser challenges. |
-| `SHP-BD-1234` | **`12345678901`** | Blue Dart Express | Delhi Cargo, IN | Bangalore Hub, IN | `2026-11-02 09:00` | `https://www.bluedart.com/trackdartresultthirdparty` — Static SSR HTML tables without JS hydration or complex tokens. |
-| `SHP-AZ-1000` | **`100000000000`** | Amazon Shipping | Bhiwandi FC, IN | Hyderabad Hub, IN | `2026-11-03 11:00` | `https://track.amazon.in/api/tracker/{ID}` — Direct unauthenticated internal API returning nested JSON (progressTracker, eventHistory). |
-| `SHP-TP-BLR1` | **`BLR1234567`** | The Professional Couriers | Chennai Central, IN | Kochi Port, IN | `2026-11-04 15:00` | `https://www.tpcindia.com/TPCWebService/TrackMobDe.ashx?podno={ID}` — Raw plain text feed for mobile apps; completely bypasses main website CAPTCHA. |
-
-#### B. Ocean Container Freight Manifest
-Pre-built manifest populated with standard ISO 6346 ocean container references:
-- **Excel Spreadsheet**: [`sample-manifest.xlsx`](sample-manifest.xlsx) *(also at `public/sample-manifest.xlsx`)*
-- **CSV Spreadsheet**: [`sample-manifest.csv`](sample-manifest.csv) *(also at `public/sample-manifest.csv`)*
-
-| Shipment ID | Container Number | Carrier | Origin | Destination | Promised ETA | Assigned Dock |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `SHP-IN-8921` | **`MSKU9070323`** | Maersk Line | Shanghai Port, China | JNPT Nhava Sheva, India | `2026-11-02 08:00` | Dock A |
-| `SHP-EU-4402` | **`MEDU8456123`** | MSC | Port of Rotterdam | JNPT Nhava Sheva, India | `2026-11-04 14:00` | Dock B |
-| `SHP-US-1904` | **`HLCU1234567`** | Hapag-Lloyd | Hamburg, Germany | Port of Los Angeles, USA | `2026-11-01 10:00` | Dock C |
-| `SHP-SG-7719` | **`CMAU6192840`** | CMA CGM | Singapore Port | Chennai Port, India | `2026-11-06 16:00` | Dock D |
-| `SHP-IN-3390` | **`MRKU4123567`** | Maersk Line | Port of Colombo | Mundra Port, India | `2026-10-31 12:00` | Dock A |
-
-#### Testing the Full Workflow:
-1. Open **[http://localhost:3000/batch](http://localhost:3000/batch)**.
-2. Click **`⚡ Fast-Extract Manifest`** to immediately load the 7 third-party extractable parcels (or click **`✨ Ocean Manifest`** or drag-and-drop `sample-aggregator-manifest.xlsx`).
-3. Click **`Commit 7 Shipments & Begin Tracking`**.
-4. Navigate to **`/agent-console`** to observe live agent DOM tracking telemetry, **`/live-map`** for interactive geospatial coordinates, and **`/warehouse-portal`** for autonomous dock rescheduling.
-
-### 7. Verification & Automated Tests
+### 6. Verification & Automated Tests
 Execute the comprehensive test and validation suites:
 ```bash
 # Run unit & integration test suites (Vitest)

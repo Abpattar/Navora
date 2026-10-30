@@ -16,14 +16,7 @@ export type CarrierId =
   | 'delhivery'
   | 'tci-express'
   | 'v-xpress'
-  | 'air-cargo'
-  | 'track123'
-  | 'fedex'
-  | 'ups'
-  | 'usps'
-  | 'dhl'
-  | 'amazon-shipping'
-  | 'tpc';
+  | 'air-cargo';
 
 export interface CarrierConfig {
   id: CarrierId;
@@ -90,7 +83,7 @@ export interface DemurrageEstimate {
   notes: string;
 }
 
-export type DockId = 'Dock A' | 'Dock B' | 'Dock C' | 'Dock D';
+export type DockId = 'Dock A' | 'Dock B' | 'Dock C';
 
 export interface DockBooking {
   id: string;
@@ -125,81 +118,6 @@ export interface RescheduleAction {
   error?: string;
 }
 
-export type WorkflowState =
-  | 'IMPORTED'
-  | 'TRACKING'
-  | 'TRACKED'
-  | 'PARTIAL'
-  | 'BLOCKED'
-  | 'NOT_FOUND'
-  | 'ANALYZING'
-  | 'ACTION_REQUIRED'
-  | 'SLOT_SEARCH'
-  | 'APPROVAL_REQUIRED'
-  | 'WRITING'
-  | 'VERIFYING'
-  | 'COMPLETED'
-  | 'FAILED';
-
-export interface ShipmentWorkflowRecord {
-  id: string;
-  shipmentId: string;
-  trackingNumber: string;
-  carrier: CarrierId;
-  currentState: WorkflowState;
-  currentStep: string;
-  decisionNotes?: string;
-  proposedDock?: DockId;
-  proposedSlot?: string;
-  rescheduleReason?: string;
-  approvalStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
-  approvedAt?: string;
-  trackingRunId?: string;
-  warehouseRunId?: string;
-  confirmationId?: string;
-  errorMessage?: string;
-  createdAt: string;
-  updatedAt: string;
-  // Conveniences & aliases
-  status?: WorkflowState | string;
-  recommendedDockId?: DockId;
-  recommendedSlotTime?: string;
-  slotRecommendation?: SlotRecommendation;
-  notes?: string;
-}
-
-export type ExtractionOutcome = 'COMPLETE' | 'PARTIAL' | 'BLOCKED' | 'NOT_FOUND' | 'FAILED';
-
-export interface ExtractionVerification {
-  isValid: boolean;
-  outcome: ExtractionOutcome;
-  missingFields: string[];
-  errors: string[];
-  warnings: string[];
-  normalizedData: Record<string, unknown>;
-}
-
-export interface SlotRecommendation {
-  dockId: DockId;
-  slotTime: string;
-  reason: string;
-  bufferHours: number;
-  arrivalEta: string;
-  confidence: 'CONFIRMED' | 'INFERRED';
-  durationHours: number;
-  conflictDetected: boolean;
-  alternativeSlots?: Array<{ dockId: DockId; slotTime: string; reason: string }>;
-  shipmentId?: string;
-  trackingNumber?: string;
-  originalDockId?: DockId;
-  originalSlotTime?: string;
-  recommendedDockId?: DockId;
-  recommendedSlotTime?: string;
-  delayMinutes?: number;
-  reasoning?: string;
-  demurrageRisk?: 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH';
-}
-
 export interface Shipment {
   id: string;
   manifestId?: string;
@@ -213,9 +131,6 @@ export interface Shipment {
   assignedDock: DockId | string | null;
   assignedDockSlot: string | null;
   notes?: string;
-  workflowStatus?: WorkflowState;
-  workflowStep?: string;
-  workflowUpdatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -253,7 +168,6 @@ export interface EnrichedShipment {
   demurrage?: DemurrageEstimate;
   booking?: DockBooking;
   rescheduleAction?: RescheduleAction;
-  workflow?: ShipmentWorkflowRecord;
 }
 
 export interface DisruptionAlert {

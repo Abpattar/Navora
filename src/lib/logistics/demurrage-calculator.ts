@@ -25,13 +25,6 @@ export const DEFAULT_CARRIER_RATES: Record<string, RateConfig> = {
   'tci-express': { freeTimeDays: 3, dailyRate: 1800, detentionDailyRate: 1200, currency: 'INR' },
   'v-xpress': { freeTimeDays: 3, dailyRate: 1600, detentionDailyRate: 1100, currency: 'INR' },
   'air-cargo': { freeTimeDays: 2, dailyRate: 65, detentionDailyRate: 40, currency: 'USD' },
-  'track123': { freeTimeDays: 3, dailyRate: 50, detentionDailyRate: 30, currency: 'USD' },
-  'fedex': { freeTimeDays: 3, dailyRate: 65, detentionDailyRate: 40, currency: 'USD' },
-  'ups': { freeTimeDays: 3, dailyRate: 65, detentionDailyRate: 40, currency: 'USD' },
-  'usps': { freeTimeDays: 5, dailyRate: 35, detentionDailyRate: 20, currency: 'USD' },
-  'dhl': { freeTimeDays: 3, dailyRate: 70, detentionDailyRate: 45, currency: 'USD' },
-  'amazon-shipping': { freeTimeDays: 2, dailyRate: 1200, detentionDailyRate: 800, currency: 'INR' },
-  'tpc': { freeTimeDays: 2, dailyRate: 1000, detentionDailyRate: 600, currency: 'INR' },
 };
 
 export const PORT_RATE_OVERRIDES: Record<string, Partial<RateConfig>> = {
