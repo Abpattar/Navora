@@ -227,20 +227,31 @@ global-freight-command-center/
 │       │   ├── demurrage-calculator.ts   # Carrier tariff & port override financial engine
 │       │   ├── detention-calculator.ts   # Equipment return detention engine
 │       │   ├── risk-engine.ts            # Composite 0-100 risk score calculator
-│       │   └── action-recommender.ts     # Action recommendation engine
+│       │   ├── action-recommender.ts     # Action recommendation engine
+│       │   └── reschedule-decision-engine.ts # Warehouse Berth Capacity & Reschedule Decision Engine
+│       ├── orchestrator/
+│       │   └── index.ts                  # Unified Agent Orchestrator (strict max 2 concurrency ceiling)
+│       ├── workflow/
+│       │   └── shipment-workflow.ts      # Central READ -> DETECT -> DECIDE -> APPROVE -> WRITE -> VERIFY engine
 │       ├── queue/
 │       │   └── tracking-queue.ts         # Singleton queue with strict max 2 concurrency
 │       └── tinyfish/
-│           ├── client.ts                 # TinyFish SSE streaming client
+│           ├── client.ts                 # Dynamic READ Tracking Agent (SSE stream)
+│           ├── warehouse-agent.ts        # Dynamic WRITE Warehouse Rescheduling Agent
+│           ├── validation.ts             # Extraction verification & restriction detection
 │           └── search.ts                 # Maritime disruption scraper
 │
-└── tests/                                # Vitest test suites (34 tests)
+└── tests/                                # Vitest test suites (10 test files, 45 tests)
     ├── validation.test.ts                # Zod schemas, carrier allowlists, SSRF protection
     ├── excel.test.ts                     # SheetJS manifest upload, column matching & export
     ├── logistics.test.ts                 # SLA breaches, timezone ETAs, demurrage calculations
     ├── map.test.ts                       # UN/LOCODE geo matching, distances, zero-fake coords
     ├── tinyfish.test.ts                  # Concurrency limits, prompt security, event formats
-    └── warehouse.test.ts                 # Dock reservations, capacity, atomic swap failsafe
+    ├── warehouse.test.ts                 # Dock reservations, capacity, atomic swap failsafe
+    ├── orchestrator.test.ts              # Global max 2 concurrency ceiling, queueing, cancellation
+    ├── decision-engine.test.ts           # Docks A-D, 2h slots, buffer time, conflict avoidance
+    ├── read-agent.test.ts                # COMPLETE, PARTIAL, BLOCKED, NOT_FOUND verification
+    └── workflow.test.ts                  # Closed loop READ->DETECT->DECIDE->APPROVE->WRITE->VERIFY
 ```
 
 ---
@@ -306,7 +317,11 @@ global-freight-command-center/
 | `/api/queue/status` | `GET` | Real-time queue metrics: active agents (max 2), queued count, completed count |
 | `/api/warehouse/slots` | `GET` | Returns available dock slots for a specified date (`?date=YYYY-MM-DD`) |
 | `/api/warehouse/bookings`| `GET`, `POST` | Lists all dock reservations or creates a new confirmed booking |
-| `/api/warehouse/reschedule-agent` | `POST` | Autonomous agent endpoint: safely reserves a replacement dock slot before retiring previous slot |
+| `/api/warehouse/reschedule-booking` | `POST` | Atomic transaction endpoint: safely creates replacement booking with confirmation token before retiring prior reservation |
+| `/api/warehouse/reschedule-agent` | `POST` | Dispatches TinyFish WRITE agent to execute rescheduling with live SSE streaming |
+| `/api/workflow/execute` | `POST` | Initiates autonomous loop: READ -> DETECT -> DECIDE and pauses at human approval gate |
+| `/api/workflow/approve` | `POST` | Human gatekeeper approval: executes APPROVE -> WRITE (TinyFish agent) -> VERIFY (token check) |
+| `/api/workflow/status` | `GET` | Live state query for individual shipment workflow (`?shipmentId=...`) or all active workflows |
 | `/api/intelligence/disruptions` | `GET` | Lists active maritime disruptions, port congestion, and weather alerts |
 | `/api/agent/runs` | `GET` | Returns recent agent execution runs, duration, and terminal event logs |
 

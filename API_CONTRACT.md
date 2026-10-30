@@ -271,3 +271,123 @@ Returns active weather disruptions, port strikes, and maritime congestion mapped
   ]
 }
 ```
+
+---
+
+## 7. Central Autonomous Workflow Pipeline
+
+### `POST /api/workflow/execute`
+Initiates or advances the full autonomous operations workflow for a target shipment:
+**READ** (carrier telemetry) &rarr; **DETECT** (delay/SLA breach analysis) &rarr; **DECIDE** (warehouse berth availability & capacity optimization). If delay is confirmed, pauses at the human approval gate (`APPROVAL_REQUIRED` / `AWAITING_APPROVAL`).
+
+**Request Body (JSON):**
+```json
+{
+  "shipmentId": "SHP-IN-8921"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "shipmentId": "SHP-IN-8921",
+  "workflow": {
+    "id": "wf-uuid-123",
+    "shipmentId": "SHP-IN-8921",
+    "trackingNumber": "MSKU9070323",
+    "carrier": "maersk",
+    "currentState": "APPROVAL_REQUIRED",
+    "currentStep": "DECIDE",
+    "proposedDock": "Dock B",
+    "proposedSlot": "2026-11-04T10:00:00.000Z",
+    "approvalStatus": "PENDING",
+    "decisionNotes": "Revised ETA requires +4h vessel discharge buffer. Optimal berth Dock B avoids conflict."
+  },
+  "message": "Delay detected (+24h). Slot recommendation prepared: Dock B at 11/4/2026. Awaiting human gatekeeper approval."
+}
+```
+
+---
+
+### `POST /api/workflow/approve`
+Human operations gatekeeper action. Confirms the recommended dock rescheduling and immediately dispatches the TinyFish WRITE browser automation agent to execute the transaction:
+**APPROVE** &rarr; **WRITE** (interact with `/warehouse-portal/reschedule`) &rarr; **VERIFY** (validate authoritative `WH-CONF-...` key and release prior booking).
+
+**Request Body (JSON):**
+```json
+{
+  "shipmentId": "SHP-IN-8921",
+  "notes": "Approved by logistics shift supervisor"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "shipmentId": "SHP-IN-8921",
+  "workflow": {
+    "id": "wf-uuid-123",
+    "currentState": "COMPLETED",
+    "currentStep": "VERIFY",
+    "approvalStatus": "APPROVED",
+    "confirmationId": "WH-CONF-DockB-582914"
+  },
+  "message": "Rescheduling executed and verified. Berth Dock B reserved (WH-CONF-DockB-582914). Prior reservation safely released."
+}
+```
+
+---
+
+### `GET /api/workflow/status`
+Queries the live workflow state for a specific shipment or lists all active workflows across the enterprise.
+
+**Query Parameters:**
+- `shipmentId` (optional): Query workflow for a single shipment. Omit to list all workflows.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "workflow": {
+    "shipmentId": "SHP-IN-8921",
+    "currentState": "COMPLETED",
+    "currentStep": "VERIFY",
+    "confirmationId": "WH-CONF-DockB-582914",
+    "updatedAt": "2026-10-30T14:40:00.000Z"
+  }
+}
+```
+
+---
+
+### `POST /api/warehouse/reschedule-booking`
+Atomic transaction endpoint operated by TinyFish browser automation or manual operators on `/warehouse-portal/reschedule`. Safely persists replacement booking and verifies confirmation token before retiring prior booking.
+
+**Request Body (JSON):**
+```json
+{
+  "shipmentId": "SHP-IN-8921",
+  "replacementDockId": "Dock B",
+  "replacementSlotTime": "2026-11-04T10:00:00.000Z",
+  "reason": "Carrier transit delay mitigation"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "confirmationId": "WH-CONF-DockB-839201",
+  "booking": {
+    "id": "book-uuid-new",
+    "shipmentId": "SHP-IN-8921",
+    "dockId": "Dock B",
+    "slotTime": "2026-11-04T10:00:00.000Z",
+    "status": "CONFIRMED",
+    "confirmationId": "WH-CONF-DockB-839201"
+  }
+}
+```
+

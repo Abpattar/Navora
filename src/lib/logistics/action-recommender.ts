@@ -1,4 +1,4 @@
-import type { DockBooking, EnrichedShipment } from '@/lib/types';
+import type { DockBooking, DockId, EnrichedShipment } from '@/lib/types';
 import { parseIsoOrDate } from './eta-calculator';
 
 export interface ActionRecommendation {
@@ -7,7 +7,7 @@ export interface ActionRecommendation {
   description: string;
   priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   recommendedDockSlot?: string;
-  recommendedDockId?: 'Dock A' | 'Dock B' | 'Dock C';
+  recommendedDockId?: DockId;
   estimatedSavings?: number;
   currency?: string;
   canAutoExecute: boolean;
@@ -32,8 +32,8 @@ export function recommendShipmentActions(enriched: EnrichedShipment): ActionReco
         // Round to nearest next hour
         targetSlot.setMinutes(0, 0, 0);
 
-        const dockOptions: Array<'Dock A' | 'Dock B' | 'Dock C'> = ['Dock A', 'Dock B', 'Dock C'];
-        const chosenDock = booking.dockId || dockOptions[Math.floor(Math.random() * dockOptions.length)];
+        const dockOptions: DockId[] = ['Dock A', 'Dock B', 'Dock C', 'Dock D'];
+        const chosenDock: DockId = booking.dockId || dockOptions[0];
 
         recommendations.push({
           actionType: 'RESCHEDULE_WAREHOUSE_DOCK',

@@ -12,6 +12,8 @@ import type {
   Shipment,
   ShipmentLocation,
   ShipmentTracking,
+  ShipmentWorkflowRecord,
+  WorkflowState,
 } from '@/lib/types';
 import { calculateEtaComparison } from '@/lib/logistics/eta-calculator';
 import { assessSlaRisk } from '@/lib/logistics/sla-detector';
@@ -38,6 +40,16 @@ function getDb(): DatabaseSync {
   databaseInstance.exec('PRAGMA foreign_keys = ON;');
   databaseInstance.exec(INIT_SCHEMA_SQL);
 
+  try {
+    databaseInstance.exec('ALTER TABLE shipments ADD COLUMN workflow_status TEXT;');
+  } catch {}
+  try {
+    databaseInstance.exec('ALTER TABLE shipments ADD COLUMN workflow_step TEXT;');
+  } catch {}
+  try {
+    databaseInstance.exec('ALTER TABLE shipments ADD COLUMN workflow_updated_at TEXT;');
+  } catch {}
+
   return databaseInstance;
 }
 
@@ -51,8 +63,9 @@ export function saveShipment(shipment: Shipment): Shipment {
     INSERT INTO shipments (
       id, manifest_id, shipment_id, tracking_number, carrier, carrier_name,
       origin, destination, promised_eta, assigned_dock, assigned_dock_slot, notes,
+      workflow_status, workflow_step, workflow_updated_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       shipment_id = excluded.shipment_id,
       tracking_number = excluded.tracking_number,
@@ -64,6 +77,9 @@ export function saveShipment(shipment: Shipment): Shipment {
       assigned_dock = excluded.assigned_dock,
       assigned_dock_slot = excluded.assigned_dock_slot,
       notes = excluded.notes,
+      workflow_status = COALESCE(excluded.workflow_status, shipments.workflow_status),
+      workflow_step = COALESCE(excluded.workflow_step, shipments.workflow_step),
+      workflow_updated_at = COALESCE(excluded.workflow_updated_at, shipments.workflow_updated_at),
       updated_at = excluded.updated_at
   `);
 
@@ -80,6 +96,9 @@ export function saveShipment(shipment: Shipment): Shipment {
     shipment.assignedDock ?? null,
     shipment.assignedDockSlot ?? null,
     shipment.notes ?? null,
+    shipment.workflowStatus ?? null,
+    shipment.workflowStep ?? null,
+    shipment.workflowUpdatedAt ?? null,
     shipment.createdAt,
     shipment.updatedAt
   );
@@ -105,6 +124,9 @@ export function getShipment(id: string): Shipment | null {
     assignedDock: row.assigned_dock ? String(row.assigned_dock) : null,
     assignedDockSlot: row.assigned_dock_slot ? String(row.assigned_dock_slot) : null,
     notes: row.notes ? String(row.notes) : undefined,
+    workflowStatus: row.workflow_status ? (row.workflow_status as any) : undefined,
+    workflowStep: row.workflow_step ? String(row.workflow_step) : undefined,
+    workflowUpdatedAt: row.workflow_updated_at ? String(row.workflow_updated_at) : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -126,6 +148,9 @@ export function listShipments(): Shipment[] {
     assignedDock: row.assigned_dock ? String(row.assigned_dock) : null,
     assignedDockSlot: row.assigned_dock_slot ? String(row.assigned_dock_slot) : null,
     notes: row.notes ? String(row.notes) : undefined,
+    workflowStatus: row.workflow_status ? (row.workflow_status as any) : undefined,
+    workflowStep: row.workflow_step ? String(row.workflow_step) : undefined,
+    workflowUpdatedAt: row.workflow_updated_at ? String(row.workflow_updated_at) : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   }));
@@ -186,8 +211,8 @@ export function saveTrackingObservation(tracking: ShipmentTracking): ShipmentTra
     tracking.latestMilestone ?? null,
     tracking.lastFreeDate ?? null,
     tracking.eventDate ?? null,
-    tracking.sourceUrl,
-    tracking.retrievedAt,
+    tracking.sourceUrl || 'https://freightcommand.local/portal',
+    tracking.retrievedAt ?? new Date().toISOString(),
     JSON.stringify(tracking.milestones || []),
     JSON.stringify(tracking.warnings || []),
     tracking.errorMessage ?? null,
@@ -656,12 +681,150 @@ export function getEnrichedShipments(): EnrichedShipment[] {
         })
       : undefined;
 
+    const rescheduleAction = getLatestRescheduleAction(shipment.id) || undefined;
+    const workflow = getShipmentWorkflow(shipment.id) || undefined;
+
     return {
       shipment,
       tracking: tracking || undefined,
       booking,
       sla,
       demurrage,
+      rescheduleAction,
+      workflow,
     };
   });
+}
+
+// -------------------------------------------------------------
+// Reschedule Actions Query
+// -------------------------------------------------------------
+
+export function getLatestRescheduleAction(shipmentId: string): RescheduleAction | null {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM reschedule_actions WHERE shipment_id = ? ORDER BY created_at DESC LIMIT 1').get(shipmentId) as Record<string, unknown> | undefined;
+  if (!row) return null;
+
+  return {
+    id: String(row.id),
+    shipmentId: String(row.shipment_id),
+    trackingNumber: String(row.tracking_number),
+    carrier: row.carrier as any,
+    originalBookingId: String(row.original_booking_id),
+    originalSlotTime: String(row.original_slot_time),
+    originalDockId: row.original_dock_id as any,
+    recommendedDockId: row.recommended_dock_id as any,
+    recommendedSlotTime: String(row.recommended_slot_time),
+    status: row.status as any,
+    confirmationId: row.confirmation_id ? String(row.confirmation_id) : undefined,
+    reason: String(row.reason),
+    error: row.error ? String(row.error) : undefined,
+    createdAt: String(row.created_at),
+    executedAt: row.executed_at ? String(row.executed_at) : undefined,
+  };
+}
+
+// -------------------------------------------------------------
+// Shipment Workflow Persistence
+// -------------------------------------------------------------
+
+export function saveShipmentWorkflow(workflow: ShipmentWorkflowRecord): ShipmentWorkflowRecord {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO shipment_workflows (
+      id, shipment_id, tracking_number, carrier, current_state, current_step,
+      decision_notes, proposed_dock, proposed_slot, reschedule_reason,
+      approval_status, approved_at, tracking_run_id, warehouse_run_id,
+      confirmation_id, error_message, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(shipment_id) DO UPDATE SET
+      current_state = excluded.current_state,
+      current_step = excluded.current_step,
+      decision_notes = COALESCE(excluded.decision_notes, shipment_workflows.decision_notes),
+      proposed_dock = COALESCE(excluded.proposed_dock, shipment_workflows.proposed_dock),
+      proposed_slot = COALESCE(excluded.proposed_slot, shipment_workflows.proposed_slot),
+      reschedule_reason = COALESCE(excluded.reschedule_reason, shipment_workflows.reschedule_reason),
+      approval_status = excluded.approval_status,
+      approved_at = COALESCE(excluded.approved_at, shipment_workflows.approved_at),
+      tracking_run_id = COALESCE(excluded.tracking_run_id, shipment_workflows.tracking_run_id),
+      warehouse_run_id = COALESCE(excluded.warehouse_run_id, shipment_workflows.warehouse_run_id),
+      confirmation_id = COALESCE(excluded.confirmation_id, shipment_workflows.confirmation_id),
+      error_message = excluded.error_message,
+      updated_at = excluded.updated_at
+  `);
+
+  stmt.run(
+    workflow.id,
+    workflow.shipmentId,
+    workflow.trackingNumber,
+    workflow.carrier,
+    workflow.currentState,
+    workflow.currentStep,
+    workflow.decisionNotes ?? null,
+    workflow.proposedDock ?? null,
+    workflow.proposedSlot ?? null,
+    workflow.rescheduleReason ?? null,
+    workflow.approvalStatus,
+    workflow.approvedAt ?? null,
+    workflow.trackingRunId ?? null,
+    workflow.warehouseRunId ?? null,
+    workflow.confirmationId ?? null,
+    workflow.errorMessage ?? null,
+    workflow.createdAt,
+    workflow.updatedAt
+  );
+
+  return workflow;
+}
+
+export function getShipmentWorkflow(shipmentId: string): ShipmentWorkflowRecord | null {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM shipment_workflows WHERE shipment_id = ?').get(shipmentId) as Record<string, unknown> | undefined;
+  if (!row) return null;
+
+  return {
+    id: String(row.id),
+    shipmentId: String(row.shipment_id),
+    trackingNumber: String(row.tracking_number),
+    carrier: row.carrier as any,
+    currentState: row.current_state as any,
+    currentStep: String(row.current_step),
+    decisionNotes: row.decision_notes ? String(row.decision_notes) : undefined,
+    proposedDock: row.proposed_dock ? (row.proposed_dock as any) : undefined,
+    proposedSlot: row.proposed_slot ? String(row.proposed_slot) : undefined,
+    rescheduleReason: row.reschedule_reason ? String(row.reschedule_reason) : undefined,
+    approvalStatus: row.approval_status as any,
+    approvedAt: row.approved_at ? String(row.approved_at) : undefined,
+    trackingRunId: row.tracking_run_id ? String(row.tracking_run_id) : undefined,
+    warehouseRunId: row.warehouse_run_id ? String(row.warehouse_run_id) : undefined,
+    confirmationId: row.confirmation_id ? String(row.confirmation_id) : undefined,
+    errorMessage: row.error_message ? String(row.error_message) : undefined,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+export function listShipmentWorkflows(): ShipmentWorkflowRecord[] {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM shipment_workflows ORDER BY updated_at DESC').all() as Record<string, unknown>[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    shipmentId: String(row.shipment_id),
+    trackingNumber: String(row.tracking_number),
+    carrier: row.carrier as any,
+    currentState: row.current_state as any,
+    currentStep: String(row.current_step),
+    decisionNotes: row.decision_notes ? String(row.decision_notes) : undefined,
+    proposedDock: row.proposed_dock ? (row.proposed_dock as any) : undefined,
+    proposedSlot: row.proposed_slot ? String(row.proposed_slot) : undefined,
+    rescheduleReason: row.reschedule_reason ? String(row.reschedule_reason) : undefined,
+    approvalStatus: row.approval_status as any,
+    approvedAt: row.approved_at ? String(row.approved_at) : undefined,
+    trackingRunId: row.tracking_run_id ? String(row.tracking_run_id) : undefined,
+    warehouseRunId: row.warehouse_run_id ? String(row.warehouse_run_id) : undefined,
+    confirmationId: row.confirmation_id ? String(row.confirmation_id) : undefined,
+    errorMessage: row.error_message ? String(row.error_message) : undefined,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  }));
 }

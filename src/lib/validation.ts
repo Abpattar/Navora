@@ -29,7 +29,7 @@ export const manifestRowSchema = z.object({
     return normalized;
   }),
   promisedEta: z.string().nullable().optional(),
-  assignedDock: z.enum(['Dock A', 'Dock B', 'Dock C']).nullable().optional(),
+  assignedDock: z.enum(['Dock A', 'Dock B', 'Dock C', 'Dock D']).nullable().optional(),
   origin: z.string().nullable().optional(),
   destination: z.string().nullable().optional(),
 });
@@ -37,7 +37,7 @@ export const manifestRowSchema = z.object({
 export const rescheduleActionSchema = z.object({
   shipmentId: z.string().min(1, 'Shipment ID is required.'),
   originalBookingId: z.string().optional(),
-  recommendedDockId: z.enum(['Dock A', 'Dock B', 'Dock C']),
+  recommendedDockId: z.enum(['Dock A', 'Dock B', 'Dock C', 'Dock D']),
   recommendedSlotTime: z.string().min(1, 'Slot time is required.'),
   approved: z.boolean().default(false),
   reason: z.string().default('Shipment delay adjustment'),
@@ -48,7 +48,7 @@ export const dockBookingCreateSchema = z.object({
   shipmentId: z.string().min(1, 'Shipment ID is required.'),
   trackingNumber: z.string().min(3),
   carrierName: z.string().min(1),
-  dockId: z.enum(['Dock A', 'Dock B', 'Dock C']),
+  dockId: z.enum(['Dock A', 'Dock B', 'Dock C', 'Dock D']),
   slotTime: z.string().min(1, 'Slot time is required.'),
   originalBookingId: z.string().optional(),
   notes: z.string().optional(),

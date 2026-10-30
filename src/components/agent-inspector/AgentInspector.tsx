@@ -1,12 +1,31 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ArrowRight, Bot, Box, Play, RefreshCw, Warehouse, ShieldAlert, Sparkles, CheckCircle2 } from 'lucide-react';
+import Link from 'next/link';
+import {
+  ArrowRight,
+  Bot,
+  Box,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Layers,
+  LoaderCircle,
+  Play,
+  RefreshCw,
+  RotateCw,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Warehouse,
+  AlertTriangle,
+} from 'lucide-react';
 import BrowserWindow from './BrowserWindow';
 import AgentTerminal from './AgentTerminal';
 import AgentStatus from './AgentStatus';
 import AgentTimeline from './AgentTimeline';
-import type { AgentEvent, AgentRun, EnrichedShipment } from '@/lib/types';
+import type { AgentEvent, AgentRun, EnrichedShipment, ShipmentWorkflowRecord, SlotRecommendation } from '@/lib/types';
 
 interface AgentInspectorProps {
   initialShipmentId?: string | null;
@@ -17,6 +36,11 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
   const [selectedShipmentId, setSelectedShipmentId] = useState<string>(
     initialShipmentId || (shipments[0]?.shipment.id ?? '')
   );
+
+  // Workflow State
+  const [workflow, setWorkflow] = useState<ShipmentWorkflowRecord | null>(null);
+  const [workflowExecuting, setWorkflowExecuting] = useState(false);
+  const [workflowMessage, setWorkflowMessage] = useState<string | null>(null);
 
   // Left Panel: Tracking Agent State
   const [trackingRun, setTrackingRun] = useState<AgentRun | null>(null);
@@ -30,17 +54,26 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
 
   const activeShipment = shipments.find((s) => s.shipment.id === selectedShipmentId) || shipments[0];
 
-  // Fetch recent agent runs for this shipment
+  // Fetch recent agent runs and workflow state for this shipment
   const loadRecentRuns = async () => {
     if (!activeShipment) return;
     try {
-      const res = await fetch(`/api/agent/runs?shipmentId=${activeShipment.shipment.id}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [runsRes, wfRes] = await Promise.all([
+        fetch(`/api/agent/runs?shipmentId=${activeShipment.shipment.id}`),
+        fetch(`/api/workflow/status?shipmentId=${activeShipment.shipment.id}`),
+      ]);
+
+      if (runsRes.ok) {
+        const data = await runsRes.json();
         if (data.trackingRun) setTrackingRun(data.trackingRun);
         if (data.trackingEvents) setTrackingEvents(data.trackingEvents);
         if (data.warehouseRun) setWarehouseRun(data.warehouseRun);
         if (data.warehouseEvents) setWarehouseEvents(data.warehouseEvents);
+      }
+
+      if (wfRes.ok) {
+        const wfData = await wfRes.json();
+        setWorkflow(wfData.workflow || null);
       }
     } catch {
       // ignore
@@ -139,6 +172,7 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
                   endTime: new Date().toISOString(),
                   extractedOutput: eventPayload.result,
                 }));
+                void loadRecentRuns();
               }
             } catch {
               // ignore
@@ -260,9 +294,10 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
                   }),
                   status: 'COMPLETED',
                   endTime: new Date().toISOString(),
-                  confirmationId: eventPayload.confirmationId,
+                  confirmationId: eventPayload.result?.confirmationId || eventPayload.confirmationId,
                   extractedOutput: eventPayload.result,
                 }));
+                void loadRecentRuns();
               }
             } catch {
               // ignore
@@ -298,6 +333,77 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
     }
   };
 
+  // Trigger Complete Autonomous Workflow
+  const handleExecuteWorkflow = async () => {
+    if (!activeShipment || workflowExecuting) return;
+    setWorkflowExecuting(true);
+    setWorkflowMessage('Running autonomous workflow: READ -> DETECT -> DECIDE…');
+
+    try {
+      const res = await fetch('/api/workflow/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shipmentId: activeShipment.shipment.id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Workflow execution failed');
+      }
+
+      setWorkflow(data.workflow);
+      setWorkflowMessage(data.message);
+      void loadRecentRuns();
+    } catch (err: unknown) {
+      setWorkflowMessage(err instanceof Error ? err.message : 'Workflow error');
+    } finally {
+      setWorkflowExecuting(false);
+    }
+  };
+
+  // Human Gatekeeper Action: Approve Recommendation & Dispatch TinyFish WRITE
+  const handleApproveWorkflow = async () => {
+    if (!activeShipment || workflowExecuting) return;
+    setWorkflowExecuting(true);
+    setWorkflowMessage('Gatekeeper approved! Dispatching TinyFish WRITE agent to execute warehouse rescheduling…');
+
+    try {
+      const res = await fetch('/api/workflow/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shipmentId: activeShipment.shipment.id,
+          notes: 'Approved via Autonomous Agent Inspector Command Desk',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Approval failed');
+      }
+
+      setWorkflow(data.workflow);
+      setWorkflowMessage(data.message);
+      void runWarehouseAgent();
+    } catch (err: unknown) {
+      setWorkflowMessage(err instanceof Error ? err.message : 'Approval execution error');
+    } finally {
+      setWorkflowExecuting(false);
+    }
+  };
+
+  const stepsList = [
+    { key: 'READ', label: '1. READ Tracking' },
+    { key: 'DETECT', label: '2. DETECT Delay' },
+    { key: 'DECIDE', label: '3. DECIDE Slot' },
+    { key: 'APPROVE', label: '4. APPROVE Gate' },
+    { key: 'WRITE', label: '5. WRITE Portal' },
+    { key: 'VERIFY', label: '6. VERIFY Failsafe' },
+  ];
+
+  const currentStepIndex = stepsList.findIndex((s) => s.key === workflow?.currentStep);
+  const isAwaitingApproval = workflow?.status === 'AWAITING_APPROVAL';
+
   return (
     <div className="agent-inspector-workspace">
       {/* Top Shipment Selector & Action Header */}
@@ -321,11 +427,20 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
           <button
             type="button"
             className="button button-primary"
+            onClick={handleExecuteWorkflow}
+            disabled={workflowExecuting || trackingRunning || warehouseRunning}
+          >
+            {workflowExecuting ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}
+            <span>Run Autonomous Loop</span>
+          </button>
+          <button
+            type="button"
+            className="button button-secondary"
             onClick={runTrackingAgent}
             disabled={trackingRunning || !activeShipment}
           >
             <Bot size={16} />
-            <span>{trackingRunning ? 'Tracking Agent Running…' : 'Run Tracking Agent'}</span>
+            <span>{trackingRunning ? 'Tracking Agent…' : 'READ Agent'}</span>
           </button>
           <button
             type="button"
@@ -334,9 +449,105 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
             disabled={warehouseRunning || !activeShipment}
           >
             <Warehouse size={16} />
-            <span>{warehouseRunning ? 'Warehouse Agent Running…' : 'Run Warehouse Agent'}</span>
+            <span>{warehouseRunning ? 'Warehouse Agent…' : 'WRITE Agent'}</span>
           </button>
         </div>
+      </div>
+
+      {/* Autonomous Workflow Progress Ribbon */}
+      <div className="content-panel mb-6 p-4 rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Layers size={16} className="text-emerald-400" />
+            <h4 className="text-sm font-semibold tracking-wide">Autonomous Workflow Pipeline</h4>
+          </div>
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-medium bg-secondary text-secondary-foreground">
+            STATUS: {workflow?.status || 'READY'}
+          </span>
+        </div>
+
+        {/* Pipeline Step Badges */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          {stepsList.map((step, idx) => {
+            const isCompleted = workflow?.status === 'COMPLETE' || (currentStepIndex !== -1 && idx < currentStepIndex);
+            const isCurrent = workflow?.currentStep === step.key && workflow?.status !== 'COMPLETE';
+
+            return (
+              <div
+                key={step.key}
+                className={`p-2.5 rounded-lg border text-xs text-center transition-all ${
+                  isCompleted
+                    ? 'border-emerald-500/40 bg-emerald-950/20 text-emerald-300'
+                    : isCurrent
+                    ? 'border-blue-500 bg-blue-950/30 text-blue-200 font-semibold shadow-sm'
+                    : 'border-border/60 bg-background/50 text-muted-foreground'
+                }`}
+              >
+                <div className="font-mono text-[10px] uppercase opacity-75">{step.label}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Workflow Message Banner */}
+        {workflowMessage && (
+          <div className="mt-3 p-2.5 rounded-lg bg-background/80 border border-border text-xs text-foreground flex items-center justify-between">
+            <span>{workflowMessage}</span>
+          </div>
+        )}
+
+        {/* Human Gatekeeper Approval Alert Card */}
+        {isAwaitingApproval && workflow && (
+          <div className="mt-4 p-4 rounded-xl border border-amber-500/40 bg-amber-950/20 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-amber-300">Human Approval Gate: Rescheduling Proposed</h4>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Recommendation: Shift reservation to <strong>{workflow.proposedDock || workflow.recommendedDockId || 'Dock B'}</strong> at{' '}
+                  <strong>{new Date(workflow.proposedSlot || workflow.recommendedSlotTime || new Date().toISOString()).toLocaleString()}</strong>.
+                </p>
+                {(workflow.decisionNotes || workflow.notes) && <p className="text-xs text-amber-200/80 mt-1">{workflow.decisionNotes || workflow.notes}</p>}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="button button-primary text-xs px-4 py-2 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500"
+                onClick={handleApproveWorkflow}
+                disabled={workflowExecuting}
+              >
+                <CheckCircle2 size={14} />
+                <span>Approve & Dispatch TinyFish Agent</span>
+              </button>
+              <Link
+                href={`/warehouse-portal/reschedule?shipmentId=${activeShipment.shipment.id}&dock=${encodeURIComponent(workflow.proposedDock || workflow.recommendedDockId || 'Dock B')}&time=10:00`}
+                className="button button-secondary text-xs"
+              >
+                Review in Portal
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Authoritative Confirmation Card */}
+        {workflow?.confirmationId && (
+          <div className="mt-4 p-3 rounded-lg border border-emerald-500/40 bg-emerald-950/20 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 size={20} className="text-emerald-400" />
+              <div>
+                <div className="text-xs text-muted-foreground">Authoritative Confirmation Token</div>
+                <div className="font-mono font-bold text-emerald-400 text-sm">{workflow.confirmationId}</div>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 text-xs rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+              <ShieldCheck size={12} /> Failsafe Verified
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Main Dual Execution Panels */}
@@ -347,8 +558,8 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
             <div className="panel-column-title">
               <Bot size={18} className="text-sky-400" />
               <div>
-                <h3>Carrier Tracking Agent</h3>
-                <p>Navigates live carrier portals to verify milestones</p>
+                <h3>Carrier Tracking Agent (READ)</h3>
+                <p>Navigates carrier tracking portals to extract verified milestones</p>
               </div>
             </div>
           </div>
@@ -383,8 +594,8 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
             <div className="panel-column-title">
               <Warehouse size={18} className="text-amber-400" />
               <div>
-                <h3>Warehouse Rescheduling Agent</h3>
-                <p>Navigates internal dock portal to shift unloading reservations</p>
+                <h3>Warehouse Rescheduling Agent (WRITE)</h3>
+                <p>Operates terminal rescheduling portal to execute berth adjustments</p>
               </div>
             </div>
           </div>
@@ -394,7 +605,7 @@ export default function AgentInspector({ initialShipmentId, shipments }: AgentIn
           <BrowserWindow
             streamingUrl={warehouseRun?.streamingUrl}
             agentType="Warehouse Agent"
-            targetUrl="/warehouse-portal"
+            targetUrl="/warehouse-portal/reschedule"
             status={warehouseRunning ? 'RUNNING' : warehouseRun?.status || 'IDLE'}
           />
 

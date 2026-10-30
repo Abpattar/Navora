@@ -6,5 +6,8 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   resolve: { alias: { '@': path.resolve(root, 'src') } },
-  test: { environment: 'node' },
+  test: {
+    environment: 'node',
+    fileParallelism: false,
+  },
 });

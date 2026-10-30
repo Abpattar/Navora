@@ -147,4 +147,28 @@ CREATE TABLE IF NOT EXISTS disruption_alerts (
   published_at TEXT NOT NULL,
   related_shipment_ids_json TEXT
 );
+
+CREATE TABLE IF NOT EXISTS shipment_workflows (
+  id TEXT PRIMARY KEY,
+  shipment_id TEXT UNIQUE NOT NULL,
+  tracking_number TEXT NOT NULL,
+  carrier TEXT NOT NULL,
+  current_state TEXT NOT NULL,
+  current_step TEXT NOT NULL,
+  decision_notes TEXT,
+  proposed_dock TEXT,
+  proposed_slot TEXT,
+  reschedule_reason TEXT,
+  approval_status TEXT NOT NULL DEFAULT 'PENDING',
+  approved_at TEXT,
+  tracking_run_id TEXT,
+  warehouse_run_id TEXT,
+  confirmation_id TEXT,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_shipment ON shipment_workflows(shipment_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_state ON shipment_workflows(current_state);
 `;
