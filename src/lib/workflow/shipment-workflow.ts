@@ -78,6 +78,7 @@ export async function executeShipmentWorkflow(
           carrier,
           trackingNumber: shipment.trackingNumber,
           shipmentId: shipment.id,
+          timeoutMs: 35000,
         });
 
         const rawStatus = result.status || result.latestEvent || '';
